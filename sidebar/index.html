@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenBrowser</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <header class="sidebar-header">
+        <h1>OpenBrowser</h1>
+        <span class="badge">Execution-first AI browser</span>
+      </header>
+
+      <section class="goal-section">
+        <label for="ai-provider-select">AI Provider</label>
+        <select id="ai-provider-select" class="ai-provider-select">
+          <option value="heuristic">Heuristic (no AI)</option>
+          <option value="gemini">Gemini</option>
+          <option value="ollama">Ollama (local)</option>
+        </select>
+        <label for="api-key-input" id="api-key-label">API Key override (optional)</label>
+        <input type="password" id="api-key-input" class="api-key-input" placeholder="Override key from .env" autocomplete="off" />
+        <label for="goal-input">Goal</label>
+        <textarea id="goal-input" rows="3" placeholder="e.g. Search for weather in Tokyo"></textarea>
+        <div class="execute-buttons">
+          <button id="btn-execute" class="btn-primary">Execute</button>
+          <button id="btn-rerun" class="btn-secondary" title="Re-run saved plan" disabled>Re-run</button>
+        </div>
+      </section>
+
+      <section class="status-section">
+        <div class="status-row">
+          <span class="status-label">State</span>
+          <span id="status-state" class="status-value">idle</span>
+        </div>
+        <div class="status-row">
+          <span class="status-label">Extension</span>
+          <span id="status-extension" class="status-value">checking...</span>
+        </div>
+      </section>
+
+      <section class="projects-section">
+        <h3>Projects</h3>
+        <input type="text" id="project-name-input" class="project-name-input" placeholder="Project name (optional)" />
+        <div class="project-buttons">
+          <button id="btn-save-project" class="btn-secondary btn-sm">Save</button>
+          <button id="btn-new-project" class="btn-secondary btn-sm">New</button>
+        </div>
+        <div id="project-list" class="project-list"></div>
+      </section>
+
+      <section class="actions-section">
+        <h3>Action Log</h3>
+        <div id="action-log" class="action-log"></div>
+      </section>
+
+      <section class="approval-section" id="approval-section" hidden>
+        <h3>Approval Required</h3>
+        <p id="approval-message"></p>
+        <div class="approval-buttons">
+          <button id="btn-approve" class="btn-primary">Approve</button>
+          <button id="btn-reject" class="btn-secondary">Reject</button>
+        </div>
+      </section>
+    </aside>
+
+    <main class="browser-area">
+      <div class="browser-chrome">
+        <input type="text" id="url-bar" class="url-bar" placeholder="Enter URL or search..." value="https://www.google.com" />
+        <button id="btn-go" class="btn-nav">Go</button>
+      </div>
+    </main>
+  </div>
+  <script src="renderer.js"></script>
+</body>
+</html>

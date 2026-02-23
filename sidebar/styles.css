@@ -1,0 +1,382 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --bg-sidebar: #1a1d23;
+  --bg-main: #0f1114;
+  --accent: #6366f1;
+  --accent-hover: #818cf8;
+  --text: #e2e8f0;
+  --text-muted: #94a3b8;
+  --border: #334155;
+  --success: #22c55e;
+  --error: #ef4444;
+}
+
+body {
+  font-family: "JetBrains Mono", "Fira Code", "SF Mono", Consolas, monospace;
+  background: var(--bg-main);
+  color: var(--text);
+  height: 100vh;
+  overflow: hidden;
+}
+
+.layout {
+  display: flex;
+  height: 100vh;
+}
+
+.sidebar {
+  width: 320px;
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  gap: 20px;
+}
+
+.sidebar-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sidebar-header h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.badge {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+.ai-provider-select {
+  width: 100%;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  background: var(--bg-main);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.ai-provider-select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.api-key-input {
+  width: 100%;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  background: var(--bg-main);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.85rem;
+}
+
+.api-key-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.goal-section label,
+.approval-section h3 {
+  display: block;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+#goal-input {
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--bg-main);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.9rem;
+  resize: vertical;
+}
+
+#goal-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.btn-primary,
+.btn-secondary,
+.btn-nav {
+  padding: 10px 16px;
+  border: none;
+  border-radius: 6px;
+  font-family: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: white;
+  width: 100%;
+  margin-top: 8px;
+}
+
+.btn-primary:hover {
+  background: var(--accent-hover);
+}
+
+.execute-buttons {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.execute-buttons .btn-primary {
+  flex: 1;
+  margin-top: 0;
+}
+
+.execute-buttons .btn-secondary {
+  flex: 0;
+}
+
+.execute-buttons .btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+
+.btn-secondary:hover {
+  background: var(--border);
+  color: var(--text);
+}
+
+.status-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.status-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+}
+
+.status-label {
+  color: var(--text-muted);
+}
+
+.status-value {
+  font-weight: 500;
+}
+
+.status-value.connected {
+  color: var(--success);
+}
+
+.status-value.disconnected {
+  color: var(--error);
+}
+
+.projects-section h3,
+.actions-section h3 {
+  display: block;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.project-name-input {
+  width: 100%;
+  padding: 6px 10px;
+  margin-bottom: 8px;
+  background: var(--bg-main);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.85rem;
+}
+
+.project-buttons {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.btn-sm {
+  padding: 6px 12px;
+  font-size: 0.85rem;
+}
+
+.project-list {
+  max-height: 120px;
+  overflow-y: auto;
+  font-size: 0.8rem;
+  background: var(--bg-main);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px;
+}
+
+.project-list-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.project-list-item:hover {
+  background: var(--border);
+}
+
+.project-list-item-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-list-item-delete {
+  padding: 2px 6px;
+  font-size: 0.7rem;
+  background: transparent;
+  color: var(--error);
+  border: none;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.project-list-item-delete:hover {
+  background: rgba(239, 68, 68, 0.2);
+}
+
+.project-list-empty {
+  padding: 12px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.action-log {
+  flex: 1;
+  overflow-y: auto;
+  font-size: 0.75rem;
+  background: var(--bg-main);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+  max-height: 200px;
+}
+
+.action-log-entry {
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+.action-log-entry:last-child {
+  border-bottom: none;
+}
+
+.action-log-entry.success {
+  color: var(--success);
+}
+
+.action-log-entry.error {
+  color: var(--error);
+}
+
+.approval-section {
+  padding: 12px;
+  background: rgba(99, 102, 241, 0.1);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+}
+
+.approval-section p {
+  margin-bottom: 12px;
+  font-size: 0.9rem;
+}
+
+.approval-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.approval-buttons .btn-primary {
+  margin-top: 0;
+  flex: 1;
+}
+
+.browser-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.browser-chrome {
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-sidebar);
+  border-bottom: 1px solid var(--border);
+}
+
+.url-bar {
+  flex: 1;
+  padding: 8px 12px;
+  background: var(--bg-main);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.9rem;
+}
+
+.url-bar:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.btn-nav {
+  padding: 8px 16px;
+  background: var(--accent);
+  color: white;
+}
+
+.btn-nav:hover {
+  background: var(--accent-hover);
+}
+
+#webview {
+  flex: 1;
+  min-height: 0;
+}
