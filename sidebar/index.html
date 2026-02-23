@@ -4,73 +4,114 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>OpenBrowser</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <div class="layout">
-    <aside class="sidebar">
+    <aside id="sidebar" class="sidebar" role="complementary">
+      <button type="button" id="sidebar-toggle" class="sidebar-toggle" aria-label="Toggle sidebar" title="Toggle sidebar">
+        <span class="sidebar-toggle-icon" aria-hidden="true">◀</span>
+      </button>
+      <div class="sidebar-content">
       <header class="sidebar-header">
-        <h1>OpenBrowser</h1>
-        <span class="badge">Execution-first AI browser</span>
+        <div class="logo">
+          <span class="logo-icon" aria-hidden="true">◇</span>
+          <div class="logo-text">
+            <h1>OpenBrowser</h1>
+            <span class="tagline">AI-powered browser automation</span>
+          </div>
+        </div>
       </header>
 
-      <section class="goal-section">
-        <label for="ai-provider-select">AI Provider</label>
-        <select id="ai-provider-select" class="ai-provider-select">
-          <option value="heuristic">Heuristic (no AI)</option>
-          <option value="gemini">Gemini</option>
-          <option value="ollama">Ollama (local)</option>
-        </select>
-        <label for="api-key-input" id="api-key-label">API Key override (optional)</label>
-        <input type="password" id="api-key-input" class="api-key-input" placeholder="Override key from .env" autocomplete="off" />
-        <label for="goal-input">Goal</label>
-        <textarea id="goal-input" rows="3" placeholder="e.g. Search for weather in Tokyo"></textarea>
-        <div class="execute-buttons">
-          <button id="btn-execute" class="btn-primary">Execute</button>
-          <button id="btn-rerun" class="btn-secondary" title="Re-run saved plan" disabled>Re-run</button>
+      <!-- View 1: Projects (parent) — no goal, only project list -->
+      <div id="view-projects" class="sidebar-view sidebar-view--active">
+        <div id="welcome-block" class="welcome-block">
+          <h2>Projects</h2>
+          <p class="welcome-desc">Select a project to see its goal and run it, or create a new one.</p>
         </div>
-      </section>
+        <section class="projects-section projects-section--highlight">
+          <h3 class="projects-section-title">Projects</h3>
+          <p id="projects-prompt" class="projects-prompt">Create a project first. Enter a name below and click Save, then open it to add a goal.</p>
+          <input type="text" id="project-name-input" class="project-name-input" placeholder="Project name" aria-label="Project name" />
+          <div class="project-buttons">
+            <button id="btn-save-project" class="btn-secondary btn-sm">Save</button>
+            <button id="btn-new-project" class="btn-secondary btn-sm">New</button>
+          </div>
+          <div id="project-list" class="project-list"></div>
+        </section>
+      </div>
 
-      <section class="status-section">
-        <div class="status-row">
-          <span class="status-label">State</span>
-          <span id="status-state" class="status-value">idle</span>
+      <!-- View 2: Project detail (child) — goal, run, log for selected project -->
+      <div id="view-project-detail" class="sidebar-view" hidden>
+        <button type="button" id="btn-back-to-projects" class="back-to-projects">
+          <span class="back-to-projects-icon" aria-hidden="true">←</span>
+          Back to Projects
+        </button>
+        <div class="project-detail-header">
+          <span id="project-detail-name" class="project-detail-name">Project</span>
         </div>
-        <div class="status-row">
-          <span class="status-label">Extension</span>
-          <span id="status-extension" class="status-value">checking...</span>
-        </div>
-      </section>
+        <section class="goal-section goal-section--open">
+          <h3 class="goal-section-title">Goal</h3>
+          <p class="goal-section-desc">Saved goal for this project. Edit and run, or re-run the last plan.</p>
+          <textarea id="goal-input" rows="3" placeholder="e.g. Search for weather in Tokyo, or open a URL…"></textarea>
+          <div class="provider-row">
+            <label for="ai-provider-select" class="sr-only">Model</label>
+            <select id="ai-provider-select" class="ai-provider-select" title="Planning model">
+              <option value="heuristic">Quick (no AI)</option>
+              <option value="gemini">Gemini</option>
+              <option value="ollama">Ollama</option>
+            </select>
+            <input type="password" id="api-key-input" class="api-key-input" placeholder="API key (optional)" autocomplete="off" title="Override API key from .env" />
+            <span id="api-key-label" class="sr-only">API key</span>
+          </div>
+          <div class="execute-buttons">
+            <button id="btn-execute" class="btn-primary">
+              <span class="btn-text">Run</span>
+            </button>
+            <button id="btn-rerun" class="btn-secondary" title="Re-run last plan" disabled>Re-run</button>
+          </div>
+        </section>
+        <section class="status-section">
+          <div class="status-row">
+            <span class="status-label">Status</span>
+            <span id="status-state" class="status-value status-idle">Idle</span>
+          </div>
+          <div class="status-row">
+            <span class="status-label">Extension</span>
+            <span id="status-extension" class="status-value">Checking…</span>
+          </div>
+        </section>
+        <section class="actions-section">
+          <h3>Run log</h3>
+          <div id="action-log" class="action-log">
+            <div id="action-log-empty" class="action-log-empty">No runs yet. Set a goal above and click Run.</div>
+          </div>
+        </section>
+        <section class="approval-section" id="approval-section" hidden>
+          <h3>Confirm action</h3>
+          <p id="approval-message"></p>
+          <div class="approval-buttons">
+            <button id="btn-approve" class="btn-primary">Allow</button>
+            <button id="btn-reject" class="btn-secondary">Skip</button>
+          </div>
+        </section>
+      </div>
 
-      <section class="projects-section">
-        <h3>Projects</h3>
-        <input type="text" id="project-name-input" class="project-name-input" placeholder="Project name (optional)" />
-        <div class="project-buttons">
-          <button id="btn-save-project" class="btn-secondary btn-sm">Save</button>
-          <button id="btn-new-project" class="btn-secondary btn-sm">New</button>
-        </div>
-        <div id="project-list" class="project-list"></div>
-      </section>
-
-      <section class="actions-section">
-        <h3>Action Log</h3>
-        <div id="action-log" class="action-log"></div>
-      </section>
-
-      <section class="approval-section" id="approval-section" hidden>
-        <h3>Approval Required</h3>
-        <p id="approval-message"></p>
-        <div class="approval-buttons">
-          <button id="btn-approve" class="btn-primary">Approve</button>
-          <button id="btn-reject" class="btn-secondary">Reject</button>
-        </div>
-      </section>
+      <footer class="sidebar-footer">
+        <span class="footer-text">OpenBrowser</span>
+        <span class="footer-version">v0.1.0</span>
+      </footer>
+      </div>
     </aside>
 
     <main class="browser-area">
       <div class="browser-chrome">
-        <input type="text" id="url-bar" class="url-bar" placeholder="Enter URL or search..." value="https://www.google.com" />
-        <button id="btn-go" class="btn-nav">Go</button>
+        <span class="url-bar-icon" aria-hidden="true">◇</span>
+        <input type="text" id="url-bar" class="url-bar" placeholder="Enter URL or search…" value="https://www.google.com" aria-label="Address" spellcheck="false" />
+        <button id="btn-go" class="btn-go" type="button">Go</button>
       </div>
     </main>
   </div>

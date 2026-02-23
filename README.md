@@ -1,6 +1,6 @@
 # OpenBrowser
 
-**OpenBrowser** — execution-first AI browser (like OpenClaw, OpenAI). AI controls the browser via a Chrome extension for structured task automation.
+**OpenBrowser** — AI-powered browser automation. Describe your goal in plain language; OpenBrowser plans and runs the steps in the browser. Built for reliability, with project save/load and optional AI planners (Gemini, Ollama).
 
 ## Architecture
 
@@ -25,6 +25,13 @@
 │  • Perceives interactable elements, executes typed actions       │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+## First run
+
+1. Start the app: `npm start`
+2. Use the welcome panel: **“What would you like to do?”** with example goals (e.g. “Search weather in Tokyo”, “Open Wikipedia”).
+3. Enter a goal (or click an example), choose a model, then click **Run** (or press **⌘↵** / **Ctrl+Enter**).
+4. Save your work via **Projects** for later reuse or **Re-run**.
 
 ## Quick Start
 

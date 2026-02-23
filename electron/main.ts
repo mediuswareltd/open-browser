@@ -23,10 +23,12 @@ const isDev = process.env.NODE_ENV === "development";
 const userDataPath = path.join(app.getPath("userData"), "open-browser");
 const projectRoot = path.join(__dirname, "..", "..");
 const extensionPath = path.join(projectRoot, "extension");
-const SIDEBAR_WIDTH = 320;
-const URL_BAR_HEIGHT = 50;
+const SIDEBAR_EXPANDED = 320;
+const SIDEBAR_COLLAPSED = 52;
+const URL_BAR_HEIGHT = 48;
 
 let mainWindow: BrowserWindow | null = null;
+let sidebarWidth = SIDEBAR_EXPANDED;
 let browserView: BrowserView | null = null;
 let bridgeServer: ReturnType<typeof createServer> | null = null;
 
@@ -55,9 +57,9 @@ function updateBrowserViewBounds(win: BrowserWindow) {
   if (!browserView) return;
   const [w, h] = win.getContentSize();
   browserView.setBounds({
-    x: SIDEBAR_WIDTH,
+    x: sidebarWidth,
     y: URL_BAR_HEIGHT,
-    width: Math.max(0, w - SIDEBAR_WIDTH),
+    width: Math.max(0, w - sidebarWidth),
     height: Math.max(0, h - URL_BAR_HEIGHT),
   });
 }
@@ -113,6 +115,11 @@ async function loadExtension() {
 
 function setupIPC() {
   ipcMain.handle("get-bridge-port", () => bridgeServer?.port ?? 0);
+  ipcMain.handle("set-sidebar-width", (_e, width: number) => {
+    sidebarWidth = width;
+    if (mainWindow && browserView) updateBrowserViewBounds(mainWindow);
+  });
+  ipcMain.handle("get-sidebar-width", () => sidebarWidth);
   ipcMain.handle("get-user-data-path", () => userDataPath);
   ipcMain.handle("get-webview-partition", () => PERSISTENT_PARTITION);
   ipcMain.handle("browser-navigate", (_e, url: string) => {
