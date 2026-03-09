@@ -1,118 +1,192 @@
 # OpenBrowser
 
-**OpenBrowser** — AI-powered browser automation. Describe your goal in plain language; OpenBrowser plans and runs the steps in the browser. Built for reliability, with project save/load and optional AI planners (Gemini, Ollama).
+<p align="center">
+  <img src="arts/open-browser.png" alt="OpenBrowser" width="320" />
+</p>
+
+**OpenBrowser** — AI-powered browser automation. Describe your goal in plain language; OpenBrowser plans and executes the steps inside a real Chromium browser. It supports a fast rule-based planner out of the box, and optional AI planners (Gemini, Ollama) for complex goals.
+
+---
+
+## Features
+
+- **Three planners** — Quick (heuristic, no API key needed), Gemini, or Ollama.
+- **Chrome extension** — Perceives DOM elements and executes typed actions (click, type, fill, scroll, select, navigate).
+- **Projects** — Save goals, plans, and run traces; reload and re-run anytime.
+- **Approval gates** — Optionally require human confirmation before risky actions.
+- **Persistent browser profile** — Stays logged in across sessions (`persist:openbrowser`).
+- **Sidebar UI** — Goal input, model selector, status, live action log, and URL bar.
+
+---
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│  Electron Shell (main + sidebar)                                 │
-│  • Persistent user profile (persist:openbrowser)                 │
-│  • WebSocket bridge (port 9333)                                  │
-│  • Sidebar: goal input, status, action log, approval gates       │
-└────────────────────────────┬────────────────────────────────────┘
-                             │ WebSocket
-┌────────────────────────────▼────────────────────────────────────┐
-│  Chrome Extension (MV2)                                          │
-│  • Background: connects to bridge, routes actions                │
-│  • Content: DOM perception, stable element IDs, action execution │
-│  • Actions: click, type, fill, scroll, select                    │
-└────────────────────────────┬────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│  Electron Shell (main + sidebar)                                  │
+│  • Persistent user profile (persist:openbrowser)                  │
+│  • WebSocket bridge server (port 9333)                            │
+│  • Sidebar: goal input, model select, status, action log          │
+│  • BrowserView: embedded Chromium panel                           │
+└────────────────────────────┬─────────────────────────────────────┘
+                             │ WebSocket (ws://localhost:9333)
+┌────────────────────────────▼─────────────────────────────────────┐
+│  Chrome Extension (MV2) — "OpenBrowser Agent"                     │
+│  • Background: connects to bridge, routes actions to content      │
+│  • Content: DOM perception, stable element IDs, action execution  │
+│  • Actions: click, type, fill, scroll, select, navigate           │
+└────────────────────────────┬─────────────────────────────────────┘
                              │ chrome.tabs.sendMessage
-┌────────────────────────────▼────────────────────────────────────┐
-│  Webview (target pages)                                          │
-│  • Extension content scripts run in pages                        │
-│  • Perceives interactable elements, executes typed actions       │
-└─────────────────────────────────────────────────────────────────┘
+┌────────────────────────────▼─────────────────────────────────────┐
+│  Webview (target pages)                                           │
+│  • Content scripts perceive interactable elements                 │
+│  • Execute typed actions directly in the page                     │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
-## First run
+---
 
-1. Start the app: `npm start`
-2. Use the welcome panel: **“What would you like to do?”** with example goals (e.g. “Search weather in Tokyo”, “Open Wikipedia”).
-3. Enter a goal (or click an example), choose a model, then click **Run** (or press **⌘↵** / **Ctrl+Enter**).
-4. Save your work via **Projects** for later reuse or **Re-run**.
+## Requirements
+
+- **Node.js** 18+
+- **npm** 9+
+- A Gemini API key ([get one free](https://aistudio.google.com/app/apikey)) — only needed if using the Gemini planner
+- Or **Ollama** running locally (`ollama run llama3.2`) — only needed if using the Ollama planner
+
+---
 
 ## Quick Start
 
 ```bash
-# Install dependencies
+# 1. Install dependencies
 npm install
+cd extension && npm install && cd ..
 
-# Build extension (creates extension/dist/*.js)
-npm run build:extension
+# 2. Configure AI (optional — heuristic works without any key)
+cp .env.example .env
+# Edit .env with your preferred provider and API key
 
-# Build Electron (creates dist/electron/*.js)
-npm run build:electron
-
-# Run (builds both then launches)
+# 3. Build and launch
 npm start
 ```
 
-## AI Configuration (.env)
+For development (auto-rebuild on change):
 
-Copy `.env.example` to `.env` and configure:
+```bash
+npm run dev
+```
+
+---
+
+## Build Scripts
+
+| Script | Description |
+|--------|-------------|
+| `npm start` | Build extension + electron, then launch |
+| `npm run dev` | Watch-mode build + launch (for development) |
+| `npm run build` | Build both extension and electron |
+| `npm run build:electron` | Compile `electron/` TypeScript → `dist/electron/` |
+| `npm run build:extension` | Compile `extension/src/` → `extension/dist/` |
+| `npm run typecheck` | Type-check without emitting |
+
+---
+
+## AI Configuration (`.env`)
+
+Copy `.env.example` to `.env` and set your preferred provider:
 
 ```bash
 cp .env.example .env
 ```
 
-| Variable | Description |
-|----------|-------------|
-| `PIXIS_AI_PROVIDER` | `gemini` \| `ollama` \| `heuristic` |
-| `PIXIS_AI_MODEL` | Model name (e.g. `gemini-2.0-flash`, `llama3.2`) |
-| `PIXIS_GEMINI_API_KEY` | API key from [aistudio.google.com](https://aistudio.google.com/app/apikey) |
-| `PIXIS_OLLAMA_BASE_URL` | Ollama URL (default: `http://localhost:11434`) |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OPENBROWSER_AI_PROVIDER` | `heuristic` | `heuristic` \| `gemini` \| `ollama` |
+| `OPENBROWSER_AI_MODEL` | `gemini-2.5-flash` | Gemini: `gemini-2.5-flash` (recommended), `gemini-2.5-flash-lite`, `gemini-2.5-pro` — Ollama: `llama3.2`, `mistral`, `phi3` |
+| `OPENBROWSER_GEMINI_API_KEY` | _(empty)_ | Required for Gemini — [get a free key](https://aistudio.google.com/app/apikey) |
+| `OPENBROWSER_OLLAMA_BASE_URL` | `http://localhost:11434` | Required for Ollama — run `ollama run llama3.2` first |
 
-The **AI Provider** dropdown in the sidebar lets you switch between providers; env sets the default. You can override the API key in the sidebar for Gemini.
+> The **Model** dropdown in the sidebar lets you switch providers at runtime. You can also paste a Gemini API key directly in the sidebar without setting it in `.env`.
+
+---
 
 ## Usage
 
-1. **Launch** — The app opens with a sidebar and a browser panel (default: Google).
-2. **Enter a goal** — e.g. `Search for weather in Tokyo` or `https://example.com`.
-3. **Execute** — Click **Execute** to run the heuristic planner and actions.
-4. **Action log** — See each step and result in the sidebar.
+1. **Launch** — The app opens with a sidebar (left) and a browser panel (right).
+2. **Create a project** — Enter a project name and click **Save**.
+3. **Enter a goal** — e.g. `Search for weather in Tokyo` or `Open https://example.com`.
+4. **Choose a model** — Quick (heuristic), Gemini, or Ollama.
+5. **Run** — Click **Run** or press `Ctrl+Enter` / `Cmd+Enter`.
+6. **Watch** — The action log shows each step live; the browser executes them.
+7. **Save** — The goal and plan are auto-saved to the project on each run.
 
-### Heuristic planner (MVP)
+### Heuristic planner
 
-- Phrases like "search for X" or "google X" → navigate to Google, then type the query and submit.
-- If the goal looks like a URL → navigate to that URL.
-- Otherwise → treat the goal as a search query.
+The built-in rule-based planner requires no API key:
+
+- `"search for X"` / `"google X"` → navigate to Google, type the query, submit.
+- `"open X"` / URL-shaped input → navigate to that URL directly.
+- Anything else → treated as a Google search query.
 
 ### Approval gates
 
-Risky actions (e.g. payment, login) can require approval. The MVP planner does not flag these by default; you can extend the planner to add `requiresApproval: true` for specific actions.
+Actions can be flagged `requiresApproval: true` in the plan. When triggered, the sidebar pauses and asks you to **Approve** or **Reject** before proceeding. The heuristic planner does not flag any actions by default; extend the planner to add approval for sensitive steps (login, payment, form submit, etc.).
+
+---
 
 ## Project Structure
 
 ```
 browser-execution-runtime/
-├── electron/           # Electron main process
-│   ├── main.ts         # App bootstrap, extension loading, bridge
-│   ├── bridge-server.ts
-│   └── preload.ts
-├── extension/          # Chrome extension (MV2)
+├── electron/                  # Electron main process (TypeScript)
+│   ├── main.ts                # App bootstrap, BrowserView, bridge, IPC
+│   ├── preload.ts             # Exposes safe APIs to the renderer
+│   ├── bridge-server.ts       # WebSocket bridge (extension ↔ renderer)
+│   ├── browser-executor.ts    # Runs actions directly via webContents
+│   ├── config.ts              # AI provider config from .env
+│   ├── gemini-planner.ts      # Gemini planning via @google/genai
+│   ├── ollama-planner.ts      # Ollama planning via local HTTP API
+│   └── project-store.ts       # Save/load projects as JSON files
+├── extension/                 # Chrome extension (MV2, TypeScript)
 │   ├── src/
-│   │   ├── background.ts  # Bridge connection, action routing
-│   │   └── content.ts     # DOM perception, action execution
+│   │   ├── background.ts      # Bridge connection, action routing
+│   │   └── content.ts         # DOM perception, action execution
 │   └── manifest.json
-├── sidebar/            # Sidebar UI (HTML/CSS/JS)
-├── shared/             # Shared schemas (Zod) and types
-├── runtime/            # Executor loop (for future Node-based agent)
+├── sidebar/                   # Sidebar UI (HTML + CSS + vanilla JS)
+│   ├── index.html
+│   ├── styles.css
+│   └── renderer.js
+├── shared/                    # Shared Zod schemas and TypeScript types
+│   ├── schemas.ts
+│   └── types.ts
+├── arts/                      # Brand assets
+│   ├── logo.png               # Icon
+│   └── open-browser.png       # Full wordmark
+├── .env.example               # AI config template
 └── package.json
 ```
 
+---
+
 ## Schemas (Zod)
 
-- **PagePerception** — URL, title, elements (id, selector, rect, etc.), risk signals.
-- **BrowserAction** — click | type | fill | scroll | select | navigate | screenshot.
-- **ActionResult** — success, error, optional perception.
+Defined in `shared/schemas.ts`:
+
+- **`PagePerception`** — URL, title, interactable elements (id, tag, selector, text, rect, role), risk signals.
+- **`BrowserAction`** — `click` | `type` | `fill` | `scroll` | `select` | `navigate` | `screenshot`, with typed fields per action.
+- **`ActionResult`** — `success`, optional `error`, optional follow-up `PagePerception`.
+- **`PlanStep`** — `{ action: BrowserAction, requiresApproval?: boolean }`.
+
+---
 
 ## Extending
 
-- **Planner** — Replace the heuristic planner in `sidebar/renderer.js` with an LLM-based planner.
-- **Validators** — Add deterministic checkers in `runtime/executor.ts`.
-- **Replay** — Persist `TraceEntry[]` to disk and add a replay harness.
+- **Planner** — Add a new planner function in `electron/` and wire it up in `main.ts` under a new `OPENBROWSER_AI_PROVIDER` value.
+- **Actions** — Add new action types to the `BrowserAction` schema in `shared/schemas.ts` and implement execution in `extension/src/content.ts` and `electron/browser-executor.ts`.
+- **Approval logic** — Set `requiresApproval: true` on any `PlanStep` to trigger the approval gate in the sidebar.
+- **Replay** — `TraceEntry[]` is already persisted per project; add a replay harness that re-feeds the saved plan into `runPlan()`.
+
+---
 
 ## License
 

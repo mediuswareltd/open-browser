@@ -469,56 +469,81 @@ function planFromGoal(goal) {
   const id = () => "a-" + Math.random().toString(36).slice(2, 10);
   const lower = goal.toLowerCase();
 
-  // Heuristic: if it looks like a search, generate search plan
-  if (lower.includes("search") || lower.includes("google") || !lower.includes("http")) {
-    const query = goal.replace(/^(search for|google|find)\s+/i, "").replace(/"|'/g, "").trim();
-    return [
-      {
-        action: {
-          id: id(),
-          type: "navigate",
-          url: "https://www.google.com",
-        },
-        requiresApproval: false,
-      },
-      {
-        action: {
-          id: id(),
-          type: "type",
-          selector: "textarea[name=q], input[name=q]",
-          text: query,
-          submit: true,
-        },
-        requiresApproval: false,
-      },
-    ];
+  const navigate = (url) => ({ action: { id: id(), type: "navigate", url }, requiresApproval: false });
+  const typeIn = (selector, text, submit = true) => ({ action: { id: id(), type: "fill", selector, text, submit }, requiresApproval: false });
+
+  // Extract the search query by stripping site/action keywords
+  const extractQuery = (keywords) => {
+    let q = lower;
+    keywords.forEach(k => { q = q.replace(k, ""); });
+    return q.replace(/['"]/g, "").trim() || goal.trim();
+  };
+
+  // YouTube
+  const ytKeywords = ["youtube", "on youtube", "in youtube"];
+  const isYT = ytKeywords.some(k => lower.includes(k));
+  if (isYT) {
+    const query = extractQuery(["visit", "go to", "open", "youtube", "search", "on", "in", "for"]);
+    if (query) {
+      return [
+        navigate("https://www.youtube.com"),
+        typeIn('input#search-input, ytd-searchbox input, input[name="search_query"], input[aria-label*="Search" i]', query),
+      ];
+    }
+    return [navigate("https://www.youtube.com")];
   }
 
-  // Default: navigate to URL if it looks like one
+  // Bing
+  if (lower.includes("bing")) {
+    const query = extractQuery(["search", "on bing", "bing", "for", "find"]);
+    if (query) return [navigate("https://www.bing.com/search?q=" + encodeURIComponent(query))];
+    return [navigate("https://www.bing.com")];
+  }
+
+  // Wikipedia
+  if (lower.includes("wikipedia")) {
+    const query = extractQuery(["search", "wikipedia", "on", "for", "find", "open", "look up"]);
+    if (query) return [navigate("https://en.wikipedia.org/w/index.php?search=" + encodeURIComponent(query))];
+    return [navigate("https://en.wikipedia.org")];
+  }
+
+  // Reddit
+  if (lower.includes("reddit")) {
+    const query = extractQuery(["search", "reddit", "on", "for", "find", "open"]);
+    if (query) return [navigate("https://www.reddit.com/search/?q=" + encodeURIComponent(query))];
+    return [navigate("https://www.reddit.com")];
+  }
+
+  // GitHub
+  if (lower.includes("github")) {
+    const query = extractQuery(["search", "github", "on", "for", "find", "open"]);
+    if (query) return [navigate("https://github.com/search?q=" + encodeURIComponent(query))];
+    return [navigate("https://github.com")];
+  }
+
+  // Bare "open/go to/visit <site>" — extract a URL-shaped word
+  const openMatch = lower.match(/(?:open|visit|go to|navigate to)\s+([\w.-]+\.\w{2,})/i);
+  if (openMatch) {
+    const site = openMatch[1];
+    return [navigate(site.startsWith("http") ? site : "https://" + site)];
+  }
+
+  // Explicit URL in goal
   const urlMatch = goal.match(/https?:\/\/\S+/);
-  if (urlMatch) {
+  if (urlMatch) return [navigate(urlMatch[0])];
+
+  // Google search (default)
+  const isSearch = lower.includes("search") || lower.includes("google") || lower.includes("find");
+  if (isSearch) {
+    const query = goal.replace(/^(search for|google|find|search)\s+/i, "").replace(/['"]/g, "").trim();
     return [
-      {
-        action: {
-          id: id(),
-          type: "navigate",
-          url: urlMatch[0],
-        },
-        requiresApproval: false,
-      },
+      navigate("https://www.google.com"),
+      typeIn('textarea[name="q"], input[name="q"]', query),
     ];
   }
 
-  return [
-    {
-      action: {
-        id: id(),
-        type: "navigate",
-        url: "https://www.google.com/search?q=" + encodeURIComponent(goal),
-      },
-      requiresApproval: false,
-    },
-  ];
+  // Fallback: Google search with the full goal as query
+  return [navigate("https://www.google.com/search?q=" + encodeURIComponent(goal))];
 }
 
 function setState(state) {
