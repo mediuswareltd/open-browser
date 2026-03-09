@@ -8,7 +8,6 @@ const apiKeyInput = document.getElementById("api-key-input");
 const apiKeyLabel = document.getElementById("api-key-label");
 const goalInput = document.getElementById("goal-input");
 const btnExecute = document.getElementById("btn-execute");
-const btnRerun = document.getElementById("btn-rerun");
 const statusState = document.getElementById("status-state");
 const statusExtension = document.getElementById("status-extension");
 const actionLog = document.getElementById("action-log");
@@ -237,7 +236,7 @@ btnExecute.addEventListener("click", async () => {
     logAction({ message: "Plan from heuristics" }, "info");
   }
   currentPlan = plan;
-  if (btnRerun) btnRerun.disabled = false;
+  await persistGoalToProject();
   setState("executing");
 
   try {
@@ -280,9 +279,11 @@ btnExecute.addEventListener("click", async () => {
       }
     }
     setState("completed");
+    await persistGoalToProject();
   } catch (err) {
     logAction({ error: "Run failed: " + (err?.message || err) }, "error");
     setState("failed");
+    await persistGoalToProject();
   }
 });
 
@@ -321,19 +322,10 @@ async function runPlan(plan) {
   setState("completed");
 }
 
-btnRerun?.addEventListener("click", async () => {
-  if (!currentPlan?.length) return;
-  actionTrace = [];
-  actionLog.innerHTML = "";
-  logAction({ message: `Re-running: ${goalInput.value?.slice(0, 50) || "project"}` }, "info");
-  await runPlan(currentPlan);
-});
-
 function setupProjects() {
   btnSaveProject?.addEventListener("click", saveProject);
   btnNewProject?.addEventListener("click", () => {
     currentProjectId = null;
-    btnRerun.disabled = true;
     goalInput.value = "";
     projectNameInput.value = "";
     actionTrace = [];
@@ -345,6 +337,24 @@ function setupProjects() {
       actionLog.appendChild(actionLogEmpty);
     }
   });
+}
+
+/** Persist current goal/plan/trace into the current project (no toast). */
+async function persistGoalToProject() {
+  if (!currentProjectId) return;
+  const goal = goalInput?.value?.trim() ?? "";
+  const name = projectNameInput?.value?.trim() || goal?.slice(0, 50) || "Untitled";
+  const provider = aiProviderSelect?.value || "heuristic";
+  try {
+    await window.openBrowser?.projectsSave?.({
+      id: currentProjectId,
+      name: name || "Untitled",
+      goal: goal || "",
+      plan: currentPlan || [],
+      trace: actionTrace || [],
+      aiProvider: provider,
+    });
+  } catch (_) {}
 }
 
 async function saveProject() {
@@ -401,7 +411,6 @@ async function loadProject(id) {
   if (!p) return;
   currentProjectId = p.id;
   if (projectNameInput) projectNameInput.value = p.name || "";
-  if (btnRerun) btnRerun.disabled = !(p.plan?.length);
   goalInput.value = p.goal || "";
   actionTrace = p.trace || [];
   currentPlan = p.plan || [];
