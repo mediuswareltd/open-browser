@@ -51,6 +51,7 @@ async function init() {
       console.log("[OpenBrowser] Bridge port:", bridgePort);
       const cfg = await window.openBrowser.getAiConfig?.();
       if (cfg) setupAiProviderSelect(cfg);
+
     } catch (e) {
       console.warn("[OpenBrowser] init:", e);
     }

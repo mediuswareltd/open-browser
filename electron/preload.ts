@@ -6,6 +6,7 @@ import { contextBridge, ipcRenderer } from "electron";
 
 contextBridge.exposeInMainWorld("openBrowser", {
   getBridgePort: () => ipcRenderer.invoke("get-bridge-port"),
+  getLogoUrl: () => ipcRenderer.invoke("get-logo-url"),
   setSidebarWidth: (width: number) => ipcRenderer.invoke("set-sidebar-width", width),
   getSidebarWidth: () => ipcRenderer.invoke("get-sidebar-width"),
   getUserDataPath: () => ipcRenderer.invoke("get-user-data-path"),

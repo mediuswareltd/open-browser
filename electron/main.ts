@@ -6,6 +6,7 @@
 import "dotenv/config";
 import { app, BrowserWindow, BrowserView, session, ipcMain } from "electron";
 import * as path from "path";
+import { pathToFileURL } from "node:url";
 import { createServer } from "./bridge-server";
 import { getAiConfig, type AiProvider } from "./config";
 import { planWithGemini } from "./gemini-planner";
@@ -25,7 +26,8 @@ const projectRoot = path.join(__dirname, "..", "..");
 const extensionPath = path.join(projectRoot, "extension");
 const SIDEBAR_EXPANDED = 320;
 const SIDEBAR_COLLAPSED = 52;
-const URL_BAR_HEIGHT = 48;
+/* Match address bar visual height: 12px padding-top + 38px bar + 20px margin-bottom = 70 */
+const URL_BAR_HEIGHT = 72;
 
 let mainWindow: BrowserWindow | null = null;
 let sidebarWidth = SIDEBAR_EXPANDED;
@@ -115,6 +117,9 @@ async function loadExtension() {
 
 function setupIPC() {
   ipcMain.handle("get-bridge-port", () => bridgeServer?.port ?? 0);
+  ipcMain.handle("get-logo-url", () =>
+    pathToFileURL(path.join(projectRoot, "arts", "logo.png")).href
+  );
   ipcMain.handle("set-sidebar-width", (_e, width: number) => {
     sidebarWidth = width;
     if (mainWindow && browserView) updateBrowserViewBounds(mainWindow);
