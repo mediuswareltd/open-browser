@@ -35,7 +35,7 @@
     "concurrently": "^8.2.2",
     "cspell": "^9.6.0",
     "electron": "^28.0.0",
-    "eslint": "^9.39.4",
+    "eslint": "^8.57.1",
     "husky": "^9.1.7",
     "lint-staged": "^15.5.2",
     "prettier": "^3.8.1",
@@ -49,14 +49,18 @@
     "zod": "^3.22.4"
   },
   "lint-staged": {
-    "*.{js,jsx,ts,tsx}": [
+    "*.{js,jsx}": [
       "prettier --write",
       "eslint --fix",
-      "cspell --no-must-find-files"
+      "cspell --config .cspell.json --no-must-find-files"
+    ],
+    "*.{ts,tsx}": [
+      "prettier --write",
+      "cspell --config .cspell.json --no-must-find-files"
     ],
     "*.{json,css,md}": [
       "prettier --write",
-      "cspell --no-must-find-files"
+      "cspell --config .cspell.json --no-must-find-files"
     ]
   }
 }

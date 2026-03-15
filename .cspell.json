@@ -8,7 +8,9 @@
     "secretlint",
     "eslint",
     "prettier",
-    "genai"
+    "genai",
+    "shadcn",
+    "ollama"
   ],
   "ignorePaths": [
     "node_modules/**",
