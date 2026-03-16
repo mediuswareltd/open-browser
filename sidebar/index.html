@@ -41,6 +41,7 @@
       <button type="button" id="sidebar-toggle" class="sidebar-toggle" aria-label="Toggle sidebar" title="Toggle sidebar">
         <span class="sidebar-toggle-icon" aria-hidden="true">&#9664;</span>
       </button>
+      
       <div class="sidebar-content">
         <header class="sidebar-header">
           <div class="logo">
@@ -124,7 +125,7 @@
               <label for="settings-model-select" class="settings-label">Models</label>
               <select id="settings-model-select" class="ai-provider-select" title="Gemini model"></select>
               <div class="settings-actions">
-                <button type="button" id="btn-settings-change-key" class="btn-primary btn-sm">Change Key</button>
+                <button type="button" id="btn-settings-change-key" class="btn-primary btn-sm">Update Key/Model</button>
               </div>
               <p id="settings-message" class="settings-message" hidden></p>
               <div class="settings-footer-actions">
@@ -137,11 +138,48 @@
     </aside>
 
     <main class="browser-area">
-      <div class="browser-chrome">
-        <span class="url-bar-icon" aria-hidden="true">&#9671;</span>
-        <input type="text" id="url-bar" class="url-bar" placeholder="Enter URL or search..." value="https://www.google.com" aria-label="Address" spellcheck="false">
-        <button id="btn-go" class="btn-go" type="button">Go</button>
-      </div>
+      <section class="workspace">
+        <header class="workspace-header">
+          <div class="workspace-title-wrap">
+            <span class="workspace-title">Task Workspace</span>
+            <span id="workspace-prompt-title" class="workspace-prompt-title">No prompt selected</span>
+          </div>
+          <div class="workspace-controls">
+            <div class="mode-toggle" role="tablist" aria-label="Workspace mode">
+              <button id="btn-mode-console" class="mode-toggle-btn is-active" type="button" role="tab" aria-selected="true">Console</button>
+              <button id="btn-mode-browser" class="mode-toggle-btn" type="button" role="tab" aria-selected="false">Browser</button>
+            </div>
+          </div>
+        </header>
+
+        <div id="workspace-console-view" class="workspace-view">
+          <section class="workspace-panel">
+            <h3 class="workspace-panel-title">Execution Logs</h3>
+            <div id="workspace-logs" class="workspace-log">
+              <div class="workspace-log-empty">Run a task to see execution logs.</div>
+            </div>
+          </section>
+          <section class="workspace-panel">
+            <h3 class="workspace-panel-title">Result</h3>
+            <div id="workspace-result" class="workspace-result">No result yet.</div>
+          </section>
+        </div>
+
+        <div id="workspace-browser-view" class="workspace-view" hidden>
+          <div class="browser-chrome">
+            <span class="url-bar-icon" aria-hidden="true">&#9671;</span>
+            <input type="text" id="url-bar" class="url-bar" placeholder="Enter URL or search..." value="https://www.google.com" aria-label="Address" spellcheck="false">
+            <button id="btn-go" class="btn-go" type="button">Go</button>
+          </div>
+          <div id="workspace-browser-stage" class="workspace-browser-stage"></div>
+          <section class="workspace-panel workspace-panel--compact">
+            <h3 class="workspace-panel-title">Logs</h3>
+            <div id="workspace-browser-logs" class="workspace-log workspace-log--compact">
+              <div class="workspace-log-empty">Run a task to see browser execution logs.</div>
+            </div>
+          </section>
+        </div>
+      </section>
     </main>
   </div>
   <script src="renderer.js"></script>

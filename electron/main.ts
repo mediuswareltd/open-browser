@@ -39,6 +39,10 @@ const URL_BAR_HEIGHT = 72;
 let mainWindow: BrowserWindow | null = null;
 let sidebarWidth = SIDEBAR_EXPANDED;
 let browserView: BrowserView | null = null;
+let browserViewVisible = false;
+let browserViewAttached = false;
+let browserViewTopInset = URL_BAR_HEIGHT;
+let browserViewBottomInset = 0;
 let bridgeServer: ReturnType<typeof createServer> | null = null;
 let extensionLoaded = false;
 let runtimeAiConfig = getAiConfig();
@@ -202,8 +206,13 @@ function createBrowserView(win: BrowserWindow) {
       nodeIntegration: false,
     },
   });
-  win.setBrowserView(browserView);
-  updateBrowserViewBounds(win);
+  if (browserViewVisible) {
+    win.setBrowserView(browserView);
+    browserViewAttached = true;
+    updateBrowserViewBounds(win);
+  } else {
+    browserViewAttached = false;
+  }
   browserView.webContents.loadURL("https://www.google.com");
 
   browserView.webContents.on("did-navigate-in-page", (_e, url) => {
@@ -215,14 +224,50 @@ function createBrowserView(win: BrowserWindow) {
 }
 
 function updateBrowserViewBounds(win: BrowserWindow) {
-  if (!browserView) return;
+  if (!browserView || !browserViewVisible || !browserViewAttached) return;
   const [w, h] = win.getContentSize();
+  const topInset = Math.max(0, Math.min(h, Math.round(browserViewTopInset)));
+  const bottomInset = Math.max(
+    0,
+    Math.min(h - topInset, Math.round(browserViewBottomInset)),
+  );
   browserView.setBounds({
     x: sidebarWidth,
-    y: URL_BAR_HEIGHT,
+    y: topInset,
     width: Math.max(0, w - sidebarWidth),
-    height: Math.max(0, h - URL_BAR_HEIGHT),
+    height: Math.max(0, h - topInset - bottomInset),
   });
+}
+
+function setBrowserViewVisible(visible: boolean) {
+  browserViewVisible = Boolean(visible);
+  if (mainWindow && browserView) {
+    if (browserViewVisible) {
+      if (!browserViewAttached) {
+        mainWindow.setBrowserView(browserView);
+        browserViewAttached = true;
+      }
+      updateBrowserViewBounds(mainWindow);
+    } else if (browserViewAttached) {
+      try {
+        mainWindow.removeBrowserView(browserView);
+      } catch (_) {}
+      browserViewAttached = false;
+    }
+  }
+  return { visible: browserViewVisible };
+}
+
+function setBrowserViewLayout(topInset: number, bottomInset: number) {
+  browserViewTopInset = Number.isFinite(topInset) ? Math.max(0, topInset) : 0;
+  browserViewBottomInset = Number.isFinite(bottomInset)
+    ? Math.max(0, bottomInset)
+    : 0;
+  if (mainWindow && browserView) updateBrowserViewBounds(mainWindow);
+  return {
+    topInset: browserViewTopInset,
+    bottomInset: browserViewBottomInset,
+  };
 }
 
 function createWindow() {
@@ -250,6 +295,7 @@ function createWindow() {
 
   mainWindow.on("closed", () => {
     browserView = null;
+    browserViewAttached = false;
     mainWindow = null;
   });
 }
@@ -287,10 +333,13 @@ function clearAiConfigAndReset() {
   clearStoredAiConfig();
   runtimeAiConfig = getAiConfig();
   if (mainWindow && browserView) {
-    try {
-      mainWindow.removeBrowserView(browserView);
-    } catch (_) {}
+    if (browserViewAttached) {
+      try {
+        mainWindow.removeBrowserView(browserView);
+      } catch (_) {}
+    }
     browserView = null;
+    browserViewAttached = false;
   }
   return { ok: true };
 }
@@ -324,11 +373,28 @@ function setupIPC() {
   });
   ipcMain.handle("clear-ai-config-and-reset", () => clearAiConfigAndReset());
   ipcMain.handle("start-main-interface", async () => startMainInterface());
-  ipcMain.handle("browser-navigate", (_e, url: string) => {
-    browserView?.webContents.loadURL(url);
+  ipcMain.handle("set-browser-view-visible", (_e, visible: boolean) =>
+    setBrowserViewVisible(visible),
+  );
+  ipcMain.handle(
+    "set-browser-view-layout",
+    (_e, topInset: number, bottomInset: number) =>
+      setBrowserViewLayout(topInset, bottomInset),
+  );
+  ipcMain.handle("browser-navigate", async (_e, url: string) => {
+    if (!browserView?.webContents) return { ok: false };
+    try {
+      await browserView.webContents.loadURL(url);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: String(err) };
+    }
   });
   ipcMain.handle("browser-get-url", () => {
     return browserView?.webContents.getURL() ?? "";
+  });
+  ipcMain.handle("browser-get-title", () => {
+    return browserView?.webContents.getTitle() ?? "";
   });
   ipcMain.handle("browser-execute-action", async (_e, action: unknown) => {
     if (!browserView?.webContents)

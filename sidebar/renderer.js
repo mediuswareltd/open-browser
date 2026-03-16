@@ -5,6 +5,17 @@
 
 const urlBar = document.getElementById("url-bar");
 const btnGo = document.getElementById("btn-go");
+const btnModeConsole = document.getElementById("btn-mode-console");
+const btnModeBrowser = document.getElementById("btn-mode-browser");
+const workspacePromptTitle = document.getElementById("workspace-prompt-title");
+const workspaceConsoleView = document.getElementById("workspace-console-view");
+const workspaceBrowserView = document.getElementById("workspace-browser-view");
+const workspaceBrowserStage = document.getElementById(
+  "workspace-browser-stage",
+);
+const workspaceLogs = document.getElementById("workspace-logs");
+const workspaceBrowserLogs = document.getElementById("workspace-browser-logs");
+const workspaceResult = document.getElementById("workspace-result");
 
 const setupScreen = document.getElementById("setup-screen");
 const appShell = document.getElementById("app-shell");
@@ -60,10 +71,16 @@ let currentProjectId = null;
 let currentTaskId = null;
 let projectSummaries = [];
 let editingTaskId = null;
+let promptDraftTaskId = null;
+let workspaceMode = "console";
+let workspaceStep = 0;
+let workspaceLogLines = [];
 
 function showProjectsView() {
   if (viewProjects) viewProjects.hidden = false;
   if (viewProjectDetail) viewProjectDetail.hidden = true;
+  promptDraftTaskId = null;
+  refreshWorkspacePromptTitle();
 }
 
 function showProjectDetailView() {
@@ -164,6 +181,8 @@ async function showMainInterface() {
   if (setupScreen) setupScreen.hidden = true;
   if (appShell) appShell.hidden = false;
   showProjectsView();
+  resetWorkspaceOutput();
+  await setWorkspaceMode("console");
   await refreshProjectList();
 }
 
@@ -323,6 +342,154 @@ function formatTime(ts) {
 function currentTask() {
   if (!currentProject || !currentTaskId) return null;
   return currentProject.tasks.find((task) => task.id === currentTaskId) || null;
+}
+
+function titleFromPrompt(prompt) {
+  const firstLine = String(prompt || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean);
+  if (!firstLine) return "No prompt selected";
+  return firstLine.length > 88
+    ? `${firstLine.slice(0, 85).trim()}...`
+    : firstLine;
+}
+
+function latestTaskPrompt() {
+  const task = currentTask();
+  if (!task?.promptHistory?.length) return "";
+  return task.promptHistory[task.promptHistory.length - 1]?.prompt || "";
+}
+
+function refreshWorkspacePromptTitle() {
+  if (!workspacePromptTitle) return;
+  const draft = taskPromptInput?.value?.trim() || "";
+  const prompt = draft || latestTaskPrompt();
+  workspacePromptTitle.textContent = titleFromPrompt(prompt);
+}
+
+function renderWorkspaceLogContainer(container) {
+  if (!container) return;
+  container.innerHTML = "";
+  if (!workspaceLogLines.length) {
+    const empty = document.createElement("div");
+    empty.className = "workspace-log-empty";
+    empty.textContent = "Run a task to see execution logs.";
+    container.appendChild(empty);
+    return;
+  }
+  workspaceLogLines.forEach((line) => {
+    const row = document.createElement("div");
+    row.className = "workspace-log-line";
+    row.textContent = line;
+    container.appendChild(row);
+  });
+  container.scrollTop = container.scrollHeight;
+}
+
+function renderWorkspaceLogs() {
+  renderWorkspaceLogContainer(workspaceLogs);
+  renderWorkspaceLogContainer(workspaceBrowserLogs);
+}
+
+function resetWorkspaceOutput() {
+  workspaceStep = 0;
+  workspaceLogLines = [];
+  renderWorkspaceLogs();
+  if (workspaceResult) workspaceResult.textContent = "No result yet.";
+}
+
+function addWorkspaceLog(message) {
+  workspaceStep += 1;
+  const time = new Date().toLocaleTimeString();
+  workspaceLogLines.push(`[${time}] [Step ${workspaceStep}] ${message}`);
+  renderWorkspaceLogs();
+}
+
+async function syncBrowserViewLayout() {
+  if (workspaceMode !== "browser") return;
+  if (!workspaceBrowserStage) return;
+  const rect = workspaceBrowserStage.getBoundingClientRect();
+  const topInset = Math.max(0, Math.round(rect.top));
+  const bottomInset = Math.max(0, Math.round(window.innerHeight - rect.bottom));
+  try {
+    await window.openBrowser?.setBrowserViewLayout?.(topInset, bottomInset);
+  } catch (_) {}
+}
+
+async function setWorkspaceMode(mode) {
+  workspaceMode = mode === "browser" ? "browser" : "console";
+
+  const isBrowser = workspaceMode === "browser";
+  if (workspaceConsoleView) workspaceConsoleView.hidden = isBrowser;
+  if (workspaceBrowserView) workspaceBrowserView.hidden = !isBrowser;
+
+  if (btnModeConsole) {
+    btnModeConsole.classList.toggle("is-active", !isBrowser);
+    btnModeConsole.setAttribute("aria-selected", String(!isBrowser));
+  }
+  if (btnModeBrowser) {
+    btnModeBrowser.classList.toggle("is-active", isBrowser);
+    btnModeBrowser.setAttribute("aria-selected", String(isBrowser));
+  }
+
+  try {
+    await window.openBrowser?.setBrowserViewVisible?.(isBrowser);
+  } catch (_) {}
+
+  if (isBrowser) {
+    requestAnimationFrame(() => {
+      syncBrowserViewLayout();
+    });
+  }
+}
+
+async function runWorkspaceTask() {
+  const task = currentTask();
+  resetWorkspaceOutput();
+  if (!task || !currentProjectId || !currentTaskId) {
+    addWorkspaceLog("Select a task first.");
+    return;
+  }
+
+  let prompt = taskPromptInput?.value?.trim() || "";
+  if (prompt) {
+    const updated = await window.openBrowser?.taskAddPrompt?.(
+      currentProjectId,
+      currentTaskId,
+      prompt,
+    );
+    if (updated) {
+      currentProject = updated;
+      taskPromptInput.value = "";
+      renderProjectDetail();
+      await refreshProjectList();
+    }
+  } else {
+    prompt = latestTaskPrompt();
+  }
+
+  if (!prompt) {
+    addWorkspaceLog("No prompt found. Add it from the left sidebar.");
+    return;
+  }
+
+  refreshWorkspacePromptTitle();
+  addWorkspaceLog("Planning task...");
+  addWorkspaceLog("Opening Google...");
+
+  const searchUrl =
+    "https://www.google.com/search?q=" + encodeURIComponent(prompt);
+  await window.openBrowser?.browserNavigate?.(searchUrl);
+
+  addWorkspaceLog("Extracting result...");
+  const title = (await window.openBrowser?.browserGetTitle?.()) || "Untitled";
+  const url = (await window.openBrowser?.browserGetUrl?.()) || searchUrl;
+
+  if (workspaceResult) {
+    workspaceResult.textContent = `Title: ${title}\nURL: ${url}`;
+  }
+  addWorkspaceLog("Done.");
 }
 
 function renderPromptHistory() {
@@ -601,6 +768,10 @@ function renderProjectDetail() {
     (task) => task.id === currentTaskId,
   );
   if (!hasSelectedTask) currentTaskId = currentProject.tasks[0]?.id || null;
+  if (taskPromptInput && promptDraftTaskId !== currentTaskId) {
+    taskPromptInput.value = "";
+    promptDraftTaskId = currentTaskId;
+  }
 
   renderTaskList();
   renderPromptHistory();
@@ -613,6 +784,7 @@ function renderProjectDetail() {
       : "Create a task first";
   }
   if (btnAddTaskPrompt) btnAddTaskPrompt.disabled = !canAddPrompt;
+  refreshWorkspacePromptTitle();
 }
 
 async function openProject(projectId, preferredTaskId) {
@@ -711,24 +883,6 @@ async function createTaskForCurrentProject() {
   await refreshProjectList();
 }
 
-async function addPromptToCurrentTask() {
-  if (!currentProjectId || !currentTaskId || !taskPromptInput) return;
-  const prompt = taskPromptInput.value.trim();
-  if (!prompt) return;
-
-  const updated = await window.openBrowser?.taskAddPrompt?.(
-    currentProjectId,
-    currentTaskId,
-    prompt,
-  );
-  if (!updated) return;
-
-  currentProject = updated;
-  taskPromptInput.value = "";
-  renderProjectDetail();
-  await refreshProjectList();
-}
-
 function setupProjectEvents() {
   btnBackToProjects?.addEventListener("click", () => {
     showProjectsView();
@@ -743,14 +897,26 @@ function setupProjectEvents() {
   });
 
   btnAddTaskPrompt?.addEventListener("click", () => {
-    addPromptToCurrentTask();
+    runWorkspaceTask();
   });
 
   taskPromptInput?.addEventListener("keydown", (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
       e.preventDefault();
-      addPromptToCurrentTask();
+      runWorkspaceTask();
     }
+  });
+
+  taskPromptInput?.addEventListener("input", () => {
+    refreshWorkspacePromptTitle();
+  });
+
+  btnModeConsole?.addEventListener("click", () => {
+    setWorkspaceMode("console");
+  });
+
+  btnModeBrowser?.addEventListener("click", () => {
+    setWorkspaceMode("browser");
   });
 }
 
@@ -765,8 +931,13 @@ async function init() {
   setupApiKeyVisibilityToggles();
   setupProjectEvents();
   setupSettingsMenu();
+  resetWorkspaceOutput();
+  refreshWorkspacePromptTitle();
 
   document.addEventListener("click", () => closeAllMenus());
+  window.addEventListener("resize", () => {
+    syncBrowserViewLayout();
+  });
 
   btnGo?.addEventListener("click", () => {
     let url = urlBar?.value?.trim() || "";

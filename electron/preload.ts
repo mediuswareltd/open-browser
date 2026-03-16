@@ -22,8 +22,13 @@ contextBridge.exposeInMainWorld("openBrowser", {
     ipcRenderer.invoke("list-gemini-models", apiKeyOverride),
   clearAiConfigAndReset: () => ipcRenderer.invoke("clear-ai-config-and-reset"),
   startMainInterface: () => ipcRenderer.invoke("start-main-interface"),
+  setBrowserViewVisible: (visible: boolean) =>
+    ipcRenderer.invoke("set-browser-view-visible", visible),
+  setBrowserViewLayout: (topInset: number, bottomInset: number) =>
+    ipcRenderer.invoke("set-browser-view-layout", topInset, bottomInset),
   browserNavigate: (url: string) => ipcRenderer.invoke("browser-navigate", url),
   browserGetUrl: () => ipcRenderer.invoke("browser-get-url"),
+  browserGetTitle: () => ipcRenderer.invoke("browser-get-title"),
   onBrowserUrlChanged: (cb: (url: string) => void) => {
     ipcRenderer.on("browser-url-changed", (_e, url: string) => cb(url));
   },
