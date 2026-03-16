@@ -76,6 +76,12 @@ function writeStoredAiConfig(config: StoredAiConfig) {
   fs.writeFileSync(configFilePath, JSON.stringify(config, null, 2), "utf-8");
 }
 
+function clearStoredAiConfig() {
+  if (fs.existsSync(configFilePath)) {
+    fs.unlinkSync(configFilePath);
+  }
+}
+
 function applyStoredAiConfig(config: StoredAiConfig) {
   runtimeAiConfig = {
     ...runtimeAiConfig,
@@ -273,6 +279,18 @@ async function startMainInterface() {
   return { started: true };
 }
 
+function clearAiConfigAndReset() {
+  clearStoredAiConfig();
+  runtimeAiConfig = getAiConfig();
+  if (mainWindow && browserView) {
+    try {
+      mainWindow.removeBrowserView(browserView);
+    } catch (_) {}
+    browserView = null;
+  }
+  return { ok: true };
+}
+
 function setupIPC() {
   ipcMain.handle("get-bridge-port", () => bridgeServer?.port ?? 0);
   ipcMain.handle(
@@ -300,6 +318,7 @@ function setupIPC() {
     const key = (apiKeyOverride || runtimeAiConfig.geminiApiKey || "").trim();
     return fetchGeminiModels(key);
   });
+  ipcMain.handle("clear-ai-config-and-reset", () => clearAiConfigAndReset());
   ipcMain.handle("start-main-interface", async () => startMainInterface());
   ipcMain.handle("browser-navigate", (_e, url: string) => {
     browserView?.webContents.loadURL(url);

@@ -54,6 +54,7 @@ const btnSettingsApiKeyVisibility = document.getElementById(
 );
 const settingsModelSelect = document.getElementById("settings-model-select");
 const btnSettingsChangeKey = document.getElementById("btn-settings-change-key");
+const btnSettingsRemoveKey = document.getElementById("btn-settings-remove-key");
 const settingsMessage = document.getElementById("settings-message");
 
 const WELCOME_DISMISSED_KEY = "openbrowser-welcome-dismissed";
@@ -317,6 +318,17 @@ function setupSettingsMenu() {
     }
     applyAiConfigToUi(result.config);
     setSettingsMessage("Saved", "success");
+  });
+
+  btnSettingsRemoveKey?.addEventListener("click", async () => {
+    try {
+      await window.openBrowser?.clearAiConfigAndReset?.();
+    } catch (e) {
+      setSettingsMessage("Failed to remove API key", "error");
+      return;
+    }
+    if (settingsPanel) settingsPanel.hidden = true;
+    window.location.reload();
   });
 }
 

@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld("openBrowser", {
   }) => ipcRenderer.invoke("verify-and-save-ai-config", data),
   listGeminiModels: (apiKeyOverride?: string) =>
     ipcRenderer.invoke("list-gemini-models", apiKeyOverride),
+  clearAiConfigAndReset: () => ipcRenderer.invoke("clear-ai-config-and-reset"),
   startMainInterface: () => ipcRenderer.invoke("start-main-interface"),
   browserNavigate: (url: string) => ipcRenderer.invoke("browser-navigate", url),
   browserGetUrl: () => ipcRenderer.invoke("browser-get-url"),

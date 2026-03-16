@@ -951,6 +951,17 @@ body {
   color: var(--text-secondary);
 }
 
+.settings-footer-actions {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  display: flex;
+}
+
+.settings-footer-actions .btn-secondary {
+  width: 100%;
+}
+
 /* Browser area */
 .browser-area {
   flex: 1;
