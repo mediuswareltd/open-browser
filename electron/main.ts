@@ -16,10 +16,14 @@ import { planWithOllama } from "./ollama-planner";
 import { executeInPage } from "./browser-executor";
 import {
   listProjects,
-  saveProject,
+  createProject,
+  renameProject,
   loadProject,
   deleteProject,
-  type SavedProject,
+  createTask,
+  renameTask,
+  deleteTask,
+  addTaskPrompt,
 } from "./project-store";
 
 const isDev = process.env.NODE_ENV === "development";
@@ -345,22 +349,38 @@ function setupIPC() {
   });
   ipcMain.handle("get-ai-config", () => runtimeAiConfig);
   ipcMain.handle("projects-list", () => listProjects(userDataPath));
-  ipcMain.handle("projects-save", (_e, data: unknown) => {
+  ipcMain.handle("project-create", (_e, name?: string) => {
     try {
-      return saveProject(
-        userDataPath,
-        data as Parameters<typeof saveProject>[1],
-      );
+      return createProject(userDataPath, name);
     } catch (err) {
-      console.error("[OpenBrowser] Save project failed:", err);
+      console.error("[OpenBrowser] Create project failed:", err);
       throw err;
     }
   });
-  ipcMain.handle("projects-load", (_e, id: string) =>
+  ipcMain.handle("project-rename", (_e, id: string, name: string) =>
+    renameProject(userDataPath, id, name),
+  );
+  ipcMain.handle("project-load", (_e, id: string) =>
     loadProject(userDataPath, id),
   );
-  ipcMain.handle("projects-delete", (_e, id: string) =>
+  ipcMain.handle("project-delete", (_e, id: string) =>
     deleteProject(userDataPath, id),
+  );
+  ipcMain.handle("task-create", (_e, projectId: string) =>
+    createTask(userDataPath, projectId),
+  );
+  ipcMain.handle(
+    "task-rename",
+    (_e, projectId: string, taskId: string, title: string) =>
+      renameTask(userDataPath, projectId, taskId, title),
+  );
+  ipcMain.handle("task-delete", (_e, projectId: string, taskId: string) =>
+    deleteTask(userDataPath, projectId, taskId),
+  );
+  ipcMain.handle(
+    "task-add-prompt",
+    (_e, projectId: string, taskId: string, prompt: string) =>
+      addTaskPrompt(userDataPath, projectId, taskId, prompt),
   );
   ipcMain.handle(
     "plan",

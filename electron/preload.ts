@@ -33,7 +33,17 @@ contextBridge.exposeInMainWorld("openBrowser", {
   executeActionInBrowser: (action: Record<string, unknown>) =>
     ipcRenderer.invoke("browser-execute-action", action),
   projectsList: () => ipcRenderer.invoke("projects-list"),
-  projectsSave: (data: unknown) => ipcRenderer.invoke("projects-save", data),
-  projectsLoad: (id: string) => ipcRenderer.invoke("projects-load", id),
-  projectsDelete: (id: string) => ipcRenderer.invoke("projects-delete", id),
+  projectCreate: (name?: string) => ipcRenderer.invoke("project-create", name),
+  projectRename: (id: string, name: string) =>
+    ipcRenderer.invoke("project-rename", id, name),
+  projectLoad: (id: string) => ipcRenderer.invoke("project-load", id),
+  projectDelete: (id: string) => ipcRenderer.invoke("project-delete", id),
+  taskCreate: (projectId: string) =>
+    ipcRenderer.invoke("task-create", projectId),
+  taskRename: (projectId: string, taskId: string, title: string) =>
+    ipcRenderer.invoke("task-rename", projectId, taskId, title),
+  taskDelete: (projectId: string, taskId: string) =>
+    ipcRenderer.invoke("task-delete", projectId, taskId),
+  taskAddPrompt: (projectId: string, taskId: string, prompt: string) =>
+    ipcRenderer.invoke("task-add-prompt", projectId, taskId, prompt),
 });

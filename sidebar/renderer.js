@@ -1,30 +1,11 @@
 /**
  * OpenBrowser - Sidebar Renderer
- * Handles UI, connects to bridge, displays status and action log
+ * Handles onboarding/settings and project/task management UI
  */
 
-const aiProviderSelect = document.getElementById("ai-provider-select");
-const apiKeyInput = document.getElementById("api-key-input");
-const apiKeyLabel = document.getElementById("api-key-label");
-const goalInput = document.getElementById("goal-input");
-const btnExecute = document.getElementById("btn-execute");
-const statusState = document.getElementById("status-state");
-const statusExtension = document.getElementById("status-extension");
-const actionLog = document.getElementById("action-log");
-const approvalSection = document.getElementById("approval-section");
-const approvalMessage = document.getElementById("approval-message");
-const btnApprove = document.getElementById("btn-approve");
-const btnReject = document.getElementById("btn-reject");
 const urlBar = document.getElementById("url-bar");
 const btnGo = document.getElementById("btn-go");
-const projectNameInput = document.getElementById("project-name-input");
-const btnSaveProject = document.getElementById("btn-save-project");
-const btnNewProject = document.getElementById("btn-new-project");
-const projectList = document.getElementById("project-list");
-const welcomeBlock = document.getElementById("welcome-block");
-const btnDismissWelcome = document.getElementById("btn-dismiss-welcome");
-const actionLogEmpty = document.getElementById("action-log-empty");
-const projectsPrompt = document.getElementById("projects-prompt");
+
 const setupScreen = document.getElementById("setup-screen");
 const appShell = document.getElementById("app-shell");
 const setupPlannerSelect = document.getElementById("setup-planner-select");
@@ -35,10 +16,21 @@ const btnSetupApiKeyVisibility = document.getElementById(
 );
 const btnSetupContinue = document.getElementById("btn-setup-continue");
 const setupError = document.getElementById("setup-error");
+
 const viewProjects = document.getElementById("view-projects");
 const viewProjectDetail = document.getElementById("view-project-detail");
 const btnBackToProjects = document.getElementById("btn-back-to-projects");
+const btnNewProject = document.getElementById("btn-new-project");
+const projectList = document.getElementById("project-list");
 const projectDetailName = document.getElementById("project-detail-name");
+const projectNameEdit = document.getElementById("project-name-edit");
+const btnNewTask = document.getElementById("btn-new-task");
+const taskList = document.getElementById("task-list");
+const taskPromptInput = document.getElementById("task-prompt-input");
+const btnAddTaskPrompt = document.getElementById("btn-add-task-prompt");
+const promptHistory = document.getElementById("prompt-history");
+const promptHistoryEmpty = document.getElementById("prompt-history-empty");
+
 const sidebar = document.getElementById("sidebar");
 const sidebarToggle = document.getElementById("sidebar-toggle");
 const settingsMenu = document.getElementById("settings-menu");
@@ -57,95 +49,17 @@ const btnSettingsChangeKey = document.getElementById("btn-settings-change-key");
 const btnSettingsRemoveKey = document.getElementById("btn-settings-remove-key");
 const settingsMessage = document.getElementById("settings-message");
 
-const WELCOME_DISMISSED_KEY = "openbrowser-welcome-dismissed";
 const SIDEBAR_COLLAPSED_KEY = "openbrowser-sidebar-collapsed";
 const SIDEBAR_WIDTH_EXPANDED = 320;
 const SIDEBAR_WIDTH_COLLAPSED = 52;
+const DEFAULT_TASK_TITLE = "New Task";
 
-let bridgePort = 0;
-let extensionSocket = null;
-let pendingApproval = null;
-let currentProjectId = null;
-let currentPlan = [];
-let actionTrace = [];
 let currentAiModel = "gemini-2.5-flash";
-let aiProviderSelectBound = false;
-
-async function init() {
-  if (window.openBrowser) {
-    try {
-      bridgePort = await window.openBrowser.getBridgePort();
-      console.log("[OpenBrowser] Bridge port:", bridgePort);
-      const cfg = await window.openBrowser.getAiConfig?.();
-      if (cfg) {
-        currentAiModel = cfg.model || currentAiModel;
-        setupAiProviderSelect(cfg);
-      }
-    } catch (e) {
-      console.warn("[OpenBrowser] init:", e);
-    }
-  }
-  if (!bridgePort) bridgePort = 9333;
-  connectToBridge();
-  setupBrowser();
-  setupProjects();
-  setupWelcome();
-  setupSidebarToggle();
-  setupViewSwitching();
-  setupApiKeyVisibilityToggles();
-  await setupSetupScreen();
-  setupSettingsMenu();
-  setupKeyboardShortcuts();
-  refreshProjectList();
-  if (localStorage.getItem(WELCOME_DISMISSED_KEY))
-    welcomeBlock?.classList.add("hidden");
-  const collapsed = localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1";
-  if (collapsed && sidebar) {
-    sidebar.classList.add("collapsed");
-    try {
-      if (window.openBrowser?.setSidebarWidth)
-        await window.openBrowser.setSidebarWidth(SIDEBAR_WIDTH_COLLAPSED);
-    } catch (_) {}
-    if (sidebarToggle) {
-      sidebarToggle.setAttribute("aria-label", "Expand sidebar");
-      sidebarToggle.title = "Expand sidebar";
-      const icon = sidebarToggle.querySelector(".sidebar-toggle-icon");
-      if (icon) icon.textContent = "▶";
-    }
-  }
-}
-
-function setupWelcome() {
-  const dismissBtn = document.getElementById("btn-dismiss-welcome");
-  if (dismissBtn)
-    dismissBtn.addEventListener("click", () => {
-      localStorage.setItem(WELCOME_DISMISSED_KEY, "1");
-      welcomeBlock?.classList.add("hidden");
-    });
-}
-
-function setupSidebarToggle() {
-  if (!sidebar || !sidebarToggle) return;
-  sidebarToggle.addEventListener("click", () => {
-    const collapsed = sidebar.classList.toggle("collapsed");
-    const width = collapsed ? SIDEBAR_WIDTH_COLLAPSED : SIDEBAR_WIDTH_EXPANDED;
-    try {
-      if (window.openBrowser?.setSidebarWidth)
-        window.openBrowser.setSidebarWidth(width);
-    } catch (_) {}
-    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, collapsed ? "1" : "0");
-    sidebarToggle.setAttribute(
-      "aria-label",
-      collapsed ? "Expand sidebar" : "Collapse sidebar",
-    );
-    sidebarToggle.title = collapsed ? "Expand sidebar" : "Collapse sidebar";
-    const icon = sidebarToggle.querySelector(".sidebar-toggle-icon");
-    if (icon) icon.textContent = collapsed ? "▶" : "◀";
-  });
-  const collapsed = localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1";
-  const icon = sidebarToggle.querySelector(".sidebar-toggle-icon");
-  if (icon) icon.textContent = collapsed ? "▶" : "◀";
-}
+let currentProject = null;
+let currentProjectId = null;
+let currentTaskId = null;
+let projectSummaries = [];
+let editingTaskId = null;
 
 function showProjectsView() {
   if (viewProjects) viewProjects.hidden = false;
@@ -155,15 +69,6 @@ function showProjectsView() {
 function showProjectDetailView() {
   if (viewProjects) viewProjects.hidden = true;
   if (viewProjectDetail) viewProjectDetail.hidden = false;
-  if (projectDetailName)
-    projectDetailName.textContent =
-      projectNameInput?.value?.trim() || "Project";
-}
-
-function setupViewSwitching() {
-  btnBackToProjects?.addEventListener("click", () => {
-    showProjectsView();
-  });
 }
 
 function setSetupError(message = "") {
@@ -215,6 +120,17 @@ function setupApiKeyVisibilityToggles() {
   });
 }
 
+function applyAiConfigToUi(config) {
+  if (!config) return;
+  currentAiModel = config.model || currentAiModel;
+  const provider = config.aiProvider || "gemini";
+  const geminiKey = config.geminiApiKey || "";
+  if (setupPlannerSelect) setupPlannerSelect.value = provider;
+  if (setupApiKeyInput) setupApiKeyInput.value = geminiKey;
+  if (settingsProviderSelect) settingsProviderSelect.value = provider;
+  if (settingsApiKeyInput) settingsApiKeyInput.value = geminiKey;
+}
+
 async function populateSettingsModels(apiKey = "", selectedModel = "") {
   if (!settingsModelSelect) return;
   settingsModelSelect.innerHTML = "";
@@ -239,20 +155,6 @@ async function populateSettingsModels(apiKey = "", selectedModel = "") {
   settingsModelSelect.value = target || currentAiModel;
 }
 
-function applyAiConfigToUi(config) {
-  if (!config) return;
-  currentAiModel = config.model || currentAiModel;
-  const provider = config.aiProvider || "gemini";
-  const geminiKey = config.geminiApiKey || "";
-  if (setupPlannerSelect) setupPlannerSelect.value = provider;
-  if (setupApiKeyInput) setupApiKeyInput.value = geminiKey;
-  if (aiProviderSelect) {
-    aiProviderSelect.value = provider;
-    aiProviderSelect.dispatchEvent(new Event("change"));
-  }
-  if (apiKeyInput) apiKeyInput.value = geminiKey;
-}
-
 async function showMainInterface() {
   try {
     await window.openBrowser?.startMainInterface?.();
@@ -262,6 +164,7 @@ async function showMainInterface() {
   if (setupScreen) setupScreen.hidden = true;
   if (appShell) appShell.hidden = false;
   showProjectsView();
+  await refreshProjectList();
 }
 
 function setupSettingsMenu() {
@@ -271,16 +174,10 @@ function setupSettingsMenu() {
     const opening = settingsPanel.hidden;
     settingsPanel.hidden = !settingsPanel.hidden;
     if (!opening) return;
-    if (settingsProviderSelect)
-      settingsProviderSelect.value = aiProviderSelect?.value || "gemini";
+
+    const cfg = await window.openBrowser?.getAiConfig?.();
+    if (cfg) applyAiConfigToUi(cfg);
     if (settingsApiKeyField) settingsApiKeyField.style.display = "";
-    if (settingsApiKeyInput) {
-      settingsApiKeyInput.value = (
-        apiKeyInput?.value ||
-        setupApiKeyInput?.value ||
-        ""
-      ).trim();
-    }
     setApiKeyInputVisibility(
       settingsApiKeyInput,
       btnSettingsApiKeyVisibility,
@@ -288,7 +185,7 @@ function setupSettingsMenu() {
     );
     await populateSettingsModels(
       settingsApiKeyInput?.value?.trim() || "",
-      currentAiModel,
+      cfg?.model || currentAiModel,
     );
     setSettingsMessage("");
   });
@@ -312,18 +209,14 @@ function setupSettingsMenu() {
       return;
     }
     const cfg = await window.openBrowser?.getAiConfig?.();
-    if (cfg) {
-      currentAiModel = cfg.model || currentAiModel;
-      setupAiProviderSelect(cfg);
-    }
-    applyAiConfigToUi(result.config);
+    if (cfg) applyAiConfigToUi(cfg);
     setSettingsMessage("Saved", "success");
   });
 
   btnSettingsRemoveKey?.addEventListener("click", async () => {
     try {
       await window.openBrowser?.clearAiConfigAndReset?.();
-    } catch (e) {
+    } catch (_) {
       setSettingsMessage("Failed to remove API key", "error");
       return;
     }
@@ -338,8 +231,6 @@ async function setupSetupScreen() {
     const visible = setupPlannerSelect?.value === "gemini";
     if (setupApiKeyField)
       setupApiKeyField.style.display = visible ? "" : "none";
-    else if (setupApiKeyInput)
-      setupApiKeyInput.style.display = visible ? "" : "none";
   };
   refreshSetupApiKeyInput();
   setupPlannerSelect?.addEventListener("change", refreshSetupApiKeyInput);
@@ -348,11 +239,6 @@ async function setupSetupScreen() {
   const saved = await window.openBrowser?.getSavedAiConfig?.();
   if (saved?.hasConfig && saved?.config) {
     applyAiConfigToUi(saved.config);
-    const cfg = await window.openBrowser?.getAiConfig?.();
-    if (cfg) {
-      currentAiModel = cfg.model || currentAiModel;
-      setupAiProviderSelect(cfg);
-    }
     await showMainInterface();
     return;
   }
@@ -371,94 +257,47 @@ async function setupSetupScreen() {
       return;
     }
     setSetupError("");
-    const cfg = await window.openBrowser?.getAiConfig?.();
-    if (cfg) {
-      currentAiModel = cfg.model || currentAiModel;
-      setupAiProviderSelect(cfg);
-    }
     applyAiConfigToUi(result.config);
     await showMainInterface();
   });
 }
 
-function setupKeyboardShortcuts() {
-  document.addEventListener("keydown", (e) => {
-    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
-      e.preventDefault();
-      if (viewProjectDetail && !viewProjectDetail.hidden) btnExecute?.click();
-    }
-  });
-}
-
-function setupAiProviderSelect(cfg) {
-  if (!aiProviderSelect) return;
-  aiProviderSelect.innerHTML = "";
-  ["heuristic", "gemini", "ollama"].forEach((p) => {
-    const opt = document.createElement("option");
-    opt.value = p;
-    opt.textContent =
-      p === "heuristic"
-        ? "Heuristic (no AI)"
-        : p === "gemini"
-          ? `Gemini (${cfg.model})`
-          : `Ollama (${cfg.model})`;
-    if (p === cfg.provider) opt.selected = true;
-    aiProviderSelect.appendChild(opt);
-  });
-  if (!aiProviderSelectBound) {
-    aiProviderSelect.addEventListener("change", () => {
-      const p = aiProviderSelect.value;
-      if (apiKeyInput) apiKeyInput.style.display = p === "gemini" ? "" : "none";
-    });
-    aiProviderSelectBound = true;
-  }
-  if (apiKeyInput)
-    apiKeyInput.style.display = cfg.provider === "gemini" ? "" : "none";
-}
-
-function connectToBridge() {
-  if (!bridgePort) {
-    statusExtension.textContent = "no bridge";
-    statusExtension.className = "status-value disconnected";
-    return;
-  }
-  const ws = new WebSocket(`ws://127.0.0.1:${bridgePort}`);
-  extensionSocket = ws;
-
-  ws.onopen = () => {
-    statusExtension.textContent = "ready";
-    statusExtension.className = "status-value connected";
-    ws.send(JSON.stringify({ type: "identify", role: "renderer" }));
-    ws.send(JSON.stringify({ type: "ping" }));
-  };
-
-  ws.onclose = () => {
-    statusExtension.textContent = "disconnected";
-    statusExtension.className = "status-value disconnected";
-    setTimeout(connectToBridge, 2000);
-  };
-
-  ws.onmessage = (ev) => {
+function setupSidebarToggle() {
+  if (!sidebar || !sidebarToggle) return;
+  sidebarToggle.addEventListener("click", () => {
+    const collapsed = sidebar.classList.toggle("collapsed");
+    const width = collapsed ? SIDEBAR_WIDTH_COLLAPSED : SIDEBAR_WIDTH_EXPANDED;
     try {
-      const msg = JSON.parse(ev.data);
-      if (msg.type === "action_result") {
-        logAction(msg.payload, msg.payload.success ? "success" : "error");
-      }
-    } catch (e) {}
-  };
+      window.openBrowser?.setSidebarWidth?.(width);
+    } catch (_) {}
+    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, collapsed ? "1" : "0");
+    sidebarToggle.setAttribute(
+      "aria-label",
+      collapsed ? "Expand sidebar" : "Collapse sidebar",
+    );
+    sidebarToggle.title = collapsed ? "Expand sidebar" : "Collapse sidebar";
+    const icon = sidebarToggle.querySelector(".sidebar-toggle-icon");
+    if (icon) icon.textContent = collapsed ? "\u25B6" : "\u25C0";
+  });
+
+  const collapsed = localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1";
+  if (collapsed) {
+    sidebar.classList.add("collapsed");
+    try {
+      window.openBrowser?.setSidebarWidth?.(SIDEBAR_WIDTH_COLLAPSED);
+    } catch (_) {}
+  }
+  const icon = sidebarToggle.querySelector(".sidebar-toggle-icon");
+  if (icon) icon.textContent = collapsed ? "\u25B6" : "\u25C0";
 }
 
 function setupBrowser() {
-  if (window.openBrowser?.browserGetUrl) {
-    window.openBrowser.browserGetUrl().then((url) => {
-      if (url) urlBar.value = url;
-    });
-  }
-  if (window.openBrowser?.onBrowserUrlChanged) {
-    window.openBrowser.onBrowserUrlChanged((url) => {
-      urlBar.value = url || urlBar.placeholder;
-    });
-  }
+  window.openBrowser?.browserGetUrl?.().then((url) => {
+    if (urlBar && url) urlBar.value = url;
+  });
+  window.openBrowser?.onBrowserUrlChanged?.((url) => {
+    if (urlBar) urlBar.value = url || urlBar.placeholder;
+  });
 }
 
 function navigateBrowser(url) {
@@ -467,496 +306,478 @@ function navigateBrowser(url) {
   }
 }
 
-btnGo.addEventListener("click", () => {
-  let url = urlBar.value.trim();
-  if (!url.startsWith("http"))
-    url = "https://www.google.com/search?q=" + encodeURIComponent(url);
-  navigateBrowser(url);
-});
-
-btnExecute.addEventListener("click", async () => {
-  const goal = goalInput.value.trim();
-  if (!goal) return;
-
-  actionTrace = [];
-  setState("planning");
-  logAction({ actionId: "plan", message: `Goal: ${goal}` }, "info");
-
-  let plan;
-  const provider = aiProviderSelect?.value || "heuristic";
-  const apiKeyOverride = apiKeyInput?.value?.trim();
-  if (provider !== "heuristic" && window.openBrowser?.plan) {
-    try {
-      plan = await window.openBrowser.plan(
-        goal,
-        provider,
-        apiKeyOverride || undefined,
-      );
-      if (plan?.length)
-        logAction({ message: `Plan from ${provider}` }, "success");
-    } catch (e) {
-      logAction({ error: `${provider} failed: ` + (e?.message || e) }, "error");
-    }
-  }
-  if (!plan?.length) {
-    plan = planFromGoal(goal);
-    logAction({ message: "Plan from heuristics" }, "info");
-  }
-  currentPlan = plan;
-  await persistGoalToProject();
-  setState("executing");
-
-  try {
-    for (let i = 0; i < plan.length; i++) {
-      const step = plan[i];
-      if (i > 0 && plan[i - 1].action.type === "navigate") {
-        await new Promise((r) => setTimeout(r, 2000));
-      }
-      if (step.requiresApproval) {
-        setState("waiting_approval");
-        pendingApproval = step;
-        if (approvalSection) approvalSection.hidden = false;
-        if (approvalMessage)
-          approvalMessage.textContent = `Approve: ${step.action.type} on "${step.action.selector || step.action.url || "element"}"?`;
-        const approved = await new Promise((resolve) => {
-          btnApprove.onclick = () => {
-            approvalSection.hidden = true;
-            pendingApproval = null;
-            resolve(true);
-          };
-          btnReject.onclick = () => {
-            approvalSection.hidden = true;
-            pendingApproval = null;
-            logAction(
-              { actionId: step.action.id, error: "Rejected by user" },
-              "error",
-            );
-            resolve(false);
-          };
-        });
-        if (!approved) continue;
-      }
-
-      if (step.action.type === "navigate") {
-        navigateBrowser(step.action.url);
-        logAction({ actionId: step.action.id, success: true }, "success");
-      } else if (window.openBrowser?.executeActionInBrowser) {
-        const result = await window.openBrowser.executeActionInBrowser(
-          step.action,
-        );
-        logAction(
-          {
-            actionId: step.action.id,
-            success: result?.success,
-            error: result?.error,
-          },
-          result?.success ? "success" : "error",
-        );
-      } else if (
-        extensionSocket &&
-        extensionSocket.readyState === WebSocket.OPEN
-      ) {
-        extensionSocket.send(
-          JSON.stringify({ type: "action", payload: step.action }),
-        );
-      } else {
-        logAction(
-          { actionId: step.action.id, error: "Cannot execute action" },
-          "error",
-        );
-      }
-    }
-    setState("completed");
-    await persistGoalToProject();
-  } catch (err) {
-    logAction({ error: "Run failed: " + (err?.message || err) }, "error");
-    setState("failed");
-    await persistGoalToProject();
-  }
-});
-
-async function runPlan(plan) {
-  setState("executing");
-  for (let i = 0; i < plan.length; i++) {
-    const step = plan[i];
-    if (i > 0 && plan[i - 1].action.type === "navigate") {
-      await new Promise((r) => setTimeout(r, 2000));
-    }
-    if (step.requiresApproval) {
-      setState("waiting_approval");
-      approvalSection.hidden = false;
-      approvalMessage.textContent = `Approve: ${step.action.type} on "${step.action.selector || step.action.url || "element"}"?`;
-      const approved = await new Promise((resolve) => {
-        btnApprove.onclick = () => {
-          approvalSection.hidden = true;
-          resolve(true);
-        };
-        btnReject.onclick = () => {
-          approvalSection.hidden = true;
-          logAction({ actionId: step.action.id, error: "Rejected" }, "error");
-          resolve(false);
-        };
-      });
-      if (!approved) continue;
-    }
-    if (step.action.type === "navigate") {
-      navigateBrowser(step.action.url);
-      logAction({ actionId: step.action.id, success: true }, "success");
-    } else if (window.openBrowser?.executeActionInBrowser) {
-      const result = await window.openBrowser.executeActionInBrowser(
-        step.action,
-      );
-      logAction(
-        {
-          actionId: step.action.id,
-          success: result?.success,
-          error: result?.error,
-        },
-        result?.success ? "success" : "error",
-      );
-    }
-  }
-  setState("completed");
-}
-
-function setupProjects() {
-  btnSaveProject?.addEventListener("click", saveProject);
-  btnNewProject?.addEventListener("click", () => {
-    currentProjectId = null;
-    goalInput.value = "";
-    projectNameInput.value = "";
-    actionTrace = [];
-    currentPlan = [];
-    setState("idle");
-    while (actionLog?.firstChild) actionLog.removeChild(actionLog.firstChild);
-    if (actionLogEmpty) {
-      actionLogEmpty.classList.remove("hidden");
-      actionLog.appendChild(actionLogEmpty);
-    }
+function closeAllMenus(except = null) {
+  document.querySelectorAll(".item-menu").forEach((menu) => {
+    if (menu !== except) menu.hidden = true;
   });
 }
 
-/** Persist current goal/plan/trace into the current project (no toast). */
-async function persistGoalToProject() {
-  if (!currentProjectId) return;
-  const goal = goalInput?.value?.trim() ?? "";
-  const name =
-    projectNameInput?.value?.trim() || goal?.slice(0, 50) || "Untitled";
-  const provider = aiProviderSelect?.value || "heuristic";
+function formatTime(ts) {
   try {
-    await window.openBrowser?.projectsSave?.({
-      id: currentProjectId,
-      name: name || "Untitled",
-      goal: goal || "",
-      plan: currentPlan || [],
-      trace: actionTrace || [],
-      aiProvider: provider,
-    });
-  } catch (_) {}
-}
-
-async function saveProject() {
-  const goal = goalInput?.value?.trim() ?? "";
-  const name = projectNameInput?.value?.trim() || goal || "Untitled";
-  if (!name && !goal) return;
-  const provider = aiProviderSelect?.value || "heuristic";
-  const isOnProjectsView = viewProjectDetail?.hidden === true;
-  try {
-    const project = await window.openBrowser?.projectsSave?.({
-      id: currentProjectId || undefined,
-      name: name || goal?.slice(0, 50) || "Untitled",
-      goal: goal || name || "",
-      plan: currentPlan || [],
-      trace: actionTrace || [],
-      aiProvider: provider,
-    });
-    if (project) {
-      currentProjectId = project.id;
-      if (projectNameInput) projectNameInput.value = project.name;
-      if (projectDetailName) projectDetailName.textContent = project.name;
-      await refreshProjectList();
-      if (isOnProjectsView) {
-        if (goalInput) goalInput.value = project.goal || "";
-        actionTrace = project.trace || [];
-        currentPlan = project.plan || [];
-        while (actionLog?.firstChild)
-          actionLog.removeChild(actionLog.firstChild);
-        if (actionTrace?.length) {
-          actionTrace.forEach((t) => {
-            const el = document.createElement("div");
-            el.className = "action-log-entry " + (t.kind || "info");
-            el.textContent = t.time + " " + t.msg;
-            actionLog.appendChild(el);
-          });
-          actionLogEmpty?.classList.add("hidden");
-        } else if (actionLogEmpty) {
-          actionLog.appendChild(actionLogEmpty);
-          actionLogEmpty.classList.remove("hidden");
-        }
-        showProjectDetailView();
-      } else {
-        logAction({ message: `Saved: ${project.name}` }, "success");
-      }
-    } else {
-      logAction({ error: "Save failed (no response)" }, "error");
-    }
-  } catch (e) {
-    logAction({ error: "Save failed: " + (e?.message || e) }, "error");
+    return new Date(ts).toLocaleTimeString();
+  } catch {
+    return "";
   }
 }
 
-async function loadProject(id) {
-  const p = await window.openBrowser?.projectsLoad?.(id);
-  if (!p) return;
-  currentProjectId = p.id;
-  if (projectNameInput) projectNameInput.value = p.name || "";
-  goalInput.value = p.goal || "";
-  actionTrace = p.trace || [];
-  currentPlan = p.plan || [];
-  while (actionLog?.firstChild) actionLog.removeChild(actionLog.firstChild);
-  (p.trace || []).forEach((t) => {
+function currentTask() {
+  if (!currentProject || !currentTaskId) return null;
+  return currentProject.tasks.find((task) => task.id === currentTaskId) || null;
+}
+
+function renderPromptHistory() {
+  if (!promptHistory) return;
+  while (promptHistory.firstChild) {
+    promptHistory.removeChild(promptHistory.firstChild);
+  }
+  const task = currentTask();
+  const entries = task?.promptHistory || [];
+  if (!entries.length) {
+    if (promptHistoryEmpty) {
+      promptHistoryEmpty.classList.remove("hidden");
+      promptHistory.appendChild(promptHistoryEmpty);
+    }
+    return;
+  }
+  if (promptHistoryEmpty) promptHistoryEmpty.classList.add("hidden");
+  entries.forEach((entry) => {
     const el = document.createElement("div");
-    el.className = "action-log-entry " + (t.kind || "info");
-    el.textContent = t.time + " " + t.msg;
-    actionLog.appendChild(el);
+    el.className = "action-log-entry";
+    el.textContent = `${formatTime(entry.createdAt)} ${entry.prompt}`;
+    promptHistory.appendChild(el);
   });
-  actionLogEmpty?.classList.add("hidden");
-  setState("idle");
-  if (projectDetailName) projectDetailName.textContent = p.name || "Project";
-  showProjectDetailView();
 }
 
 async function refreshProjectList() {
-  if (!projectList) return;
-  let list;
   try {
-    list = await window.openBrowser?.projectsList?.();
-  } catch (e) {
-    projectList.innerHTML =
-      "<div class='project-list-empty'>Error loading projects</div>";
-    return;
+    projectSummaries = (await window.openBrowser?.projectsList?.()) || [];
+  } catch (_) {
+    projectSummaries = [];
   }
-  if (!list?.length) {
-    projectList.innerHTML =
-      "<div class='project-list-empty'>No saved projects. Enter name above and click Save.</div>";
-    if (projectsPrompt) projectsPrompt.classList.remove("hidden");
-    return;
+  renderProjectList();
+
+  if (
+    currentProjectId &&
+    !projectSummaries.some((project) => project.id === currentProjectId)
+  ) {
+    currentProject = null;
+    currentProjectId = null;
+    currentTaskId = null;
+    showProjectsView();
   }
-  if (projectsPrompt) projectsPrompt.classList.add("hidden");
+}
+
+function renderProjectList() {
+  if (!projectList) return;
   projectList.innerHTML = "";
-  list.forEach((p) => {
+
+  if (!projectSummaries.length) {
+    const empty = document.createElement("div");
+    empty.className = "project-list-empty";
+    empty.textContent = "No projects yet. Create one to get started.";
+    projectList.appendChild(empty);
+    return;
+  }
+
+  projectSummaries.forEach((project) => {
     const item = document.createElement("div");
-    item.className = "project-list-item";
+    item.className =
+      "project-list-item" +
+      (project.id === currentProjectId ? " is-selected" : "");
+
+    const titleBtn = document.createElement("button");
+    titleBtn.type = "button";
+    titleBtn.className = "project-list-item-title-btn";
+    titleBtn.title = project.name || "Untitled Project";
     const title = document.createElement("span");
     title.className = "project-list-item-title";
-    title.textContent = p.name || p.goal?.slice(0, 40) || "Untitled";
-    title.title = p.goal || "";
-    title.onclick = () => loadProject(p.id);
-    const del = document.createElement("button");
-    del.className = "project-list-item-delete";
-    del.textContent = "×";
-    del.onclick = (e) => {
+    title.textContent = project.name || "Untitled Project";
+    titleBtn.appendChild(title);
+    titleBtn.addEventListener("click", () => {
+      closeAllMenus();
+      openProject(project.id);
+    });
+
+    const menuWrap = document.createElement("div");
+    menuWrap.className = "item-menu-wrap";
+    const menuBtn = document.createElement("button");
+    menuBtn.type = "button";
+    menuBtn.className = "item-menu-btn";
+    menuBtn.textContent = "...";
+
+    const menu = document.createElement("div");
+    menu.className = "item-menu";
+    menu.hidden = true;
+
+    const renameBtn = document.createElement("button");
+    renameBtn.type = "button";
+    renameBtn.className = "item-menu-item";
+    renameBtn.textContent = "Rename";
+    renameBtn.addEventListener("click", async (e) => {
       e.stopPropagation();
-      window.openBrowser
-        ?.projectsDelete?.(p.id)
-        .then(() => refreshProjectList());
-    };
-    item.appendChild(title);
-    item.appendChild(del);
+      closeAllMenus();
+      await openProject(project.id);
+      startProjectRename();
+    });
+
+    const deleteBtn = document.createElement("button");
+    deleteBtn.type = "button";
+    deleteBtn.className = "item-menu-item danger";
+    deleteBtn.textContent = "Delete";
+    deleteBtn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      closeAllMenus();
+      await window.openBrowser?.projectDelete?.(project.id);
+      if (currentProjectId === project.id) {
+        currentProject = null;
+        currentProjectId = null;
+        currentTaskId = null;
+        showProjectsView();
+      }
+      await refreshProjectList();
+    });
+
+    menuBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const open = menu.hidden;
+      closeAllMenus(menu);
+      menu.hidden = !open;
+    });
+
+    menu.appendChild(renameBtn);
+    menu.appendChild(deleteBtn);
+    menuWrap.appendChild(menuBtn);
+    menuWrap.appendChild(menu);
+
+    item.appendChild(titleBtn);
+    item.appendChild(menuWrap);
     projectList.appendChild(item);
   });
 }
 
-function planFromGoal(goal) {
-  const id = () => "a-" + Math.random().toString(36).slice(2, 10);
-  const lower = goal.toLowerCase();
+function renderTaskList() {
+  if (!taskList) return;
+  taskList.innerHTML = "";
+  const tasks = currentProject?.tasks || [];
 
-  const navigate = (url) => ({
-    action: { id: id(), type: "navigate", url },
-    requiresApproval: false,
-  });
-  const typeIn = (selector, text, submit = true) => ({
-    action: { id: id(), type: "fill", selector, text, submit },
-    requiresApproval: false,
-  });
+  if (!tasks.length) {
+    const empty = document.createElement("div");
+    empty.className = "project-list-empty";
+    empty.textContent = "No tasks yet. Create a new task.";
+    taskList.appendChild(empty);
+    return;
+  }
 
-  // Extract the search query by stripping site/action keywords
-  const extractQuery = (keywords) => {
-    let q = lower;
-    keywords.forEach((k) => {
-      q = q.replace(k, "");
-    });
-    return q.replace(/['"]/g, "").trim() || goal.trim();
-  };
+  tasks.forEach((task) => {
+    const item = document.createElement("div");
+    item.className =
+      "project-list-item" + (task.id === currentTaskId ? " is-selected" : "");
 
-  // YouTube
-  const ytKeywords = ["youtube", "on youtube", "in youtube"];
-  const isYT = ytKeywords.some((k) => lower.includes(k));
-  if (isYT) {
-    const query = extractQuery([
-      "visit",
-      "go to",
-      "open",
-      "youtube",
-      "search",
-      "on",
-      "in",
-      "for",
-    ]);
-    if (query) {
-      return [
-        navigate("https://www.youtube.com"),
-        typeIn(
-          'input#search-input, ytd-searchbox input, input[name="search_query"], input[aria-label*="Search" i]',
-          query,
-        ),
-      ];
+    if (editingTaskId === task.id) {
+      const input = document.createElement("input");
+      input.type = "text";
+      input.className = "project-name-input project-name-inline";
+      input.value = task.title || DEFAULT_TASK_TITLE;
+
+      let handled = false;
+      const complete = async (save) => {
+        if (handled) return;
+        handled = true;
+        editingTaskId = null;
+        if (save) {
+          const nextTitle = input.value.trim();
+          if (nextTitle) {
+            const updated = await window.openBrowser?.taskRename?.(
+              currentProjectId,
+              task.id,
+              nextTitle,
+            );
+            if (updated) currentProject = updated;
+            await refreshProjectList();
+          }
+        }
+        renderProjectDetail();
+      };
+
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          complete(true);
+        } else if (e.key === "Escape") {
+          e.preventDefault();
+          complete(false);
+        }
+      });
+      input.addEventListener("blur", () => complete(true));
+      item.appendChild(input);
+
+      setTimeout(() => {
+        input.focus();
+        input.select();
+      }, 0);
+    } else {
+      const titleBtn = document.createElement("button");
+      titleBtn.type = "button";
+      titleBtn.className = "project-list-item-title-btn";
+      const title = document.createElement("span");
+      title.className = "project-list-item-title";
+      title.textContent = task.title || DEFAULT_TASK_TITLE;
+      titleBtn.appendChild(title);
+      titleBtn.addEventListener("click", () => {
+        closeAllMenus();
+        currentTaskId = task.id;
+        renderProjectDetail();
+      });
+      item.appendChild(titleBtn);
     }
-    return [navigate("https://www.youtube.com")];
-  }
 
-  // Bing
-  if (lower.includes("bing")) {
-    const query = extractQuery(["search", "on bing", "bing", "for", "find"]);
-    if (query)
-      return [
-        navigate("https://www.bing.com/search?q=" + encodeURIComponent(query)),
-      ];
-    return [navigate("https://www.bing.com")];
-  }
+    const menuWrap = document.createElement("div");
+    menuWrap.className = "item-menu-wrap";
+    const menuBtn = document.createElement("button");
+    menuBtn.type = "button";
+    menuBtn.className = "item-menu-btn";
+    menuBtn.textContent = "...";
 
-  // Wikipedia
-  if (lower.includes("wikipedia")) {
-    const query = extractQuery([
-      "search",
-      "wikipedia",
-      "on",
-      "for",
-      "find",
-      "open",
-      "look up",
-    ]);
-    if (query)
-      return [
-        navigate(
-          "https://en.wikipedia.org/w/index.php?search=" +
-            encodeURIComponent(query),
-        ),
-      ];
-    return [navigate("https://en.wikipedia.org")];
-  }
+    const menu = document.createElement("div");
+    menu.className = "item-menu";
+    menu.hidden = true;
 
-  // Reddit
-  if (lower.includes("reddit")) {
-    const query = extractQuery([
-      "search",
-      "reddit",
-      "on",
-      "for",
-      "find",
-      "open",
-    ]);
-    if (query)
-      return [
-        navigate(
-          "https://www.reddit.com/search/?q=" + encodeURIComponent(query),
-        ),
-      ];
-    return [navigate("https://www.reddit.com")];
-  }
+    const renameBtn = document.createElement("button");
+    renameBtn.type = "button";
+    renameBtn.className = "item-menu-item";
+    renameBtn.textContent = "Rename";
+    renameBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      closeAllMenus();
+      editingTaskId = task.id;
+      renderTaskList();
+    });
 
-  // GitHub
-  if (lower.includes("github")) {
-    const query = extractQuery([
-      "search",
-      "github",
-      "on",
-      "for",
-      "find",
-      "open",
-    ]);
-    if (query)
-      return [
-        navigate("https://github.com/search?q=" + encodeURIComponent(query)),
-      ];
-    return [navigate("https://github.com")];
-  }
+    const deleteBtn = document.createElement("button");
+    deleteBtn.type = "button";
+    deleteBtn.className = "item-menu-item danger";
+    deleteBtn.textContent = "Delete";
+    deleteBtn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      closeAllMenus();
+      const updated = await window.openBrowser?.taskDelete?.(
+        currentProjectId,
+        task.id,
+      );
+      if (updated) {
+        currentProject = updated;
+        const exists = updated.tasks.some((t) => t.id === currentTaskId);
+        currentTaskId = exists ? currentTaskId : updated.tasks[0]?.id || null;
+      }
+      await refreshProjectList();
+      renderProjectDetail();
+    });
 
-  // Bare "open/go to/visit <site>" — extract a URL-shaped word
-  const openMatch = lower.match(
-    /(?:open|visit|go to|navigate to)\s+([\w.-]+\.\w{2,})/i,
+    menuBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const open = menu.hidden;
+      closeAllMenus(menu);
+      menu.hidden = !open;
+    });
+
+    menu.appendChild(renameBtn);
+    menu.appendChild(deleteBtn);
+    menuWrap.appendChild(menuBtn);
+    menuWrap.appendChild(menu);
+    item.appendChild(menuWrap);
+    taskList.appendChild(item);
+  });
+}
+
+function renderProjectDetail() {
+  if (!currentProject) return;
+  if (projectDetailName) {
+    projectDetailName.hidden = false;
+    projectDetailName.textContent = currentProject.name || "Project";
+  }
+  if (projectNameEdit) projectNameEdit.hidden = true;
+
+  const hasSelectedTask = currentProject.tasks.some(
+    (task) => task.id === currentTaskId,
   );
-  if (openMatch) {
-    const site = openMatch[1];
-    return [navigate(site.startsWith("http") ? site : "https://" + site)];
+  if (!hasSelectedTask) currentTaskId = currentProject.tasks[0]?.id || null;
+
+  renderTaskList();
+  renderPromptHistory();
+
+  const canAddPrompt = Boolean(currentTaskId);
+  if (taskPromptInput) {
+    taskPromptInput.disabled = !canAddPrompt;
+    taskPromptInput.placeholder = canAddPrompt
+      ? "What do you want to automate?"
+      : "Create a task first";
   }
-
-  // Explicit URL in goal
-  const urlMatch = goal.match(/https?:\/\/\S+/);
-  if (urlMatch) return [navigate(urlMatch[0])];
-
-  // Google search (default)
-  const isSearch =
-    lower.includes("search") ||
-    lower.includes("google") ||
-    lower.includes("find");
-  if (isSearch) {
-    const query = goal
-      .replace(/^(search for|google|find|search)\s+/i, "")
-      .replace(/['"]/g, "")
-      .trim();
-    return [
-      navigate("https://www.google.com"),
-      typeIn('textarea[name="q"], input[name="q"]', query),
-    ];
-  }
-
-  // Fallback: Google search with the full goal as query
-  return [
-    navigate("https://www.google.com/search?q=" + encodeURIComponent(goal)),
-  ];
+  if (btnAddTaskPrompt) btnAddTaskPrompt.disabled = !canAddPrompt;
 }
 
-function setState(state) {
-  if (!statusState) return;
-  const labels = {
-    idle: "Idle",
-    planning: "Planning…",
-    executing: "Running…",
-    waiting_approval: "Waiting for approval",
-    completed: "Done",
-    failed: "Failed",
-    recovering: "Recovering…",
+async function openProject(projectId, preferredTaskId) {
+  const project = await window.openBrowser?.projectLoad?.(projectId);
+  if (!project) {
+    await refreshProjectList();
+    return;
+  }
+  currentProject = project;
+  currentProjectId = project.id;
+  const preferredExists = project.tasks.some(
+    (task) => task.id === preferredTaskId,
+  );
+  if (preferredExists) currentTaskId = preferredTaskId;
+  else if (!project.tasks.some((task) => task.id === currentTaskId)) {
+    currentTaskId = project.tasks[0]?.id || null;
+  }
+  editingTaskId = null;
+  renderProjectDetail();
+  renderProjectList();
+  showProjectDetailView();
+}
+
+function startProjectRename() {
+  if (!currentProject || !projectNameEdit || !projectDetailName) return;
+
+  projectDetailName.hidden = true;
+  projectNameEdit.hidden = false;
+  projectNameEdit.value = currentProject.name || "Project";
+  projectNameEdit.focus();
+  projectNameEdit.select();
+
+  let handled = false;
+  const complete = async (save) => {
+    if (handled) return;
+    handled = true;
+    projectNameEdit.removeEventListener("keydown", onKeyDown);
+    projectNameEdit.removeEventListener("blur", onBlur);
+
+    if (save) {
+      const nextName = projectNameEdit.value.trim();
+      if (nextName) {
+        const updated = await window.openBrowser?.projectRename?.(
+          currentProject.id,
+          nextName,
+        );
+        if (updated) {
+          currentProject = updated;
+          currentProjectId = updated.id;
+        }
+      }
+    }
+
+    projectNameEdit.hidden = true;
+    projectDetailName.hidden = false;
+    renderProjectDetail();
+    await refreshProjectList();
   };
-  statusState.textContent = labels[state] || state;
-  statusState.className = "status-value";
-  if (state === "idle") statusState.classList.add("status-idle");
-  if (state === "completed") statusState.classList.remove("status-idle");
-  if (state === "failed") statusState.classList.add("disconnected");
-  const busy =
-    state === "planning" || state === "executing" || state === "recovering";
-  if (btnExecute) {
-    btnExecute.disabled = busy;
-    const textEl = btnExecute.querySelector(".btn-text");
-    const label = busy ? "Running…" : "Run";
-    if (textEl) textEl.textContent = label;
-    else btnExecute.textContent = label;
-  }
+
+  const onKeyDown = (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      complete(true);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      complete(false);
+    }
+  };
+  const onBlur = () => complete(true);
+
+  projectNameEdit.addEventListener("keydown", onKeyDown);
+  projectNameEdit.addEventListener("blur", onBlur);
 }
 
-function logAction(result, kind = "info") {
-  actionLogEmpty?.classList.add("hidden");
-  const msg =
-    result.message ||
-    result.error ||
-    `${result.action?.type || "?"} ${result.success !== undefined ? (result.success ? "ok" : "failed") : ""}`;
-  const time = new Date().toLocaleTimeString();
-  actionTrace.push({ time, msg, kind });
-  const el = document.createElement("div");
-  el.className = "action-log-entry " + kind;
-  el.textContent = time + " " + msg;
-  actionLog.appendChild(el);
-  actionLog.scrollTop = actionLog.scrollHeight;
+async function createProjectAndOpen() {
+  const project = await window.openBrowser?.projectCreate?.("New Project");
+  if (!project) return;
+  currentProject = project;
+  currentProjectId = project.id;
+  currentTaskId = project.tasks[0]?.id || null;
+  editingTaskId = null;
+  renderProjectDetail();
+  showProjectDetailView();
+  await refreshProjectList();
+  startProjectRename();
+}
+
+async function createTaskForCurrentProject() {
+  if (!currentProjectId) return;
+  const updated = await window.openBrowser?.taskCreate?.(currentProjectId);
+  if (!updated) return;
+  currentProject = updated;
+  currentTaskId = updated.tasks[updated.tasks.length - 1]?.id || null;
+  editingTaskId = null;
+  renderProjectDetail();
+  await refreshProjectList();
+}
+
+async function addPromptToCurrentTask() {
+  if (!currentProjectId || !currentTaskId || !taskPromptInput) return;
+  const prompt = taskPromptInput.value.trim();
+  if (!prompt) return;
+
+  const updated = await window.openBrowser?.taskAddPrompt?.(
+    currentProjectId,
+    currentTaskId,
+    prompt,
+  );
+  if (!updated) return;
+
+  currentProject = updated;
+  taskPromptInput.value = "";
+  renderProjectDetail();
+  await refreshProjectList();
+}
+
+function setupProjectEvents() {
+  btnBackToProjects?.addEventListener("click", () => {
+    showProjectsView();
+  });
+
+  btnNewProject?.addEventListener("click", () => {
+    createProjectAndOpen();
+  });
+
+  btnNewTask?.addEventListener("click", () => {
+    createTaskForCurrentProject();
+  });
+
+  btnAddTaskPrompt?.addEventListener("click", () => {
+    addPromptToCurrentTask();
+  });
+
+  taskPromptInput?.addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+      e.preventDefault();
+      addPromptToCurrentTask();
+    }
+  });
+}
+
+async function init() {
+  try {
+    const cfg = await window.openBrowser?.getAiConfig?.();
+    if (cfg) applyAiConfigToUi(cfg);
+  } catch (_) {}
+
+  setupBrowser();
+  setupSidebarToggle();
+  setupApiKeyVisibilityToggles();
+  setupProjectEvents();
+  setupSettingsMenu();
+
+  document.addEventListener("click", () => closeAllMenus());
+
+  btnGo?.addEventListener("click", () => {
+    let url = urlBar?.value?.trim() || "";
+    if (!url) return;
+    if (!url.startsWith("http")) {
+      url = "https://www.google.com/search?q=" + encodeURIComponent(url);
+    }
+    navigateBrowser(url);
+  });
+
+  await setupSetupScreen();
 }
 
 init();

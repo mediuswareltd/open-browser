@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -21,7 +21,7 @@
           <option class="ai-provider-select-option" value="ollama" disabled>Ollama</option>
         </select>
         <div id="setup-api-key-field" class="api-key-field">
-          <input type="password" id="setup-api-key-input" class="api-key-input" placeholder="Gemini API key" autocomplete="off" title="Gemini API key" />
+          <input type="password" id="setup-api-key-input" class="api-key-input" placeholder="Gemini API key" autocomplete="off" title="Gemini API key">
           <button type="button" id="btn-setup-api-key-visibility" class="api-key-toggle" aria-label="Show API key" title="Show API key">
             <span class="api-key-eye" aria-hidden="true"></span>
           </button>
@@ -39,133 +39,107 @@
   <div id="app-shell" class="layout" hidden>
     <aside id="sidebar" class="sidebar" role="complementary">
       <button type="button" id="sidebar-toggle" class="sidebar-toggle" aria-label="Toggle sidebar" title="Toggle sidebar">
-        <span class="sidebar-toggle-icon" aria-hidden="true">◀</span>
+        <span class="sidebar-toggle-icon" aria-hidden="true">&#9664;</span>
       </button>
       <div class="sidebar-content">
-      <header class="sidebar-header">
-        <div class="logo">
-          <img src="../arts/logo.png" alt="" class="logo-icon" width="32" height="32" />
-          <div class="logo-text">
-            <h1>OpenBrowser</h1>
-            <span class="tagline">AI-powered browser automation</span>
+        <header class="sidebar-header">
+          <div class="logo">
+            <img src="../arts/logo.png" alt="" class="logo-icon" width="32" height="32">
+            <div class="logo-text">
+              <h1>OpenBrowser</h1>
+              <span class="tagline">Project task workspace</span>
+            </div>
           </div>
-        </div>
-      </header>
+        </header>
 
-      <!-- View 1: Projects (parent) — no goal, only project list -->
-      <div id="view-projects" class="sidebar-view sidebar-view--active">
-        <div id="welcome-block" class="welcome-block">
-          <h2>Projects</h2>
-          <p class="welcome-desc">Select a project to see its goal and run it, or create a new one.</p>
+        <div id="view-projects" class="sidebar-view sidebar-view--active">
+          <section class="projects-section projects-section--highlight">
+            <div class="list-section-header">
+              <h3 class="projects-section-title">Projects</h3>
+              <button id="btn-new-project" class="btn-secondary btn-sm" type="button">+ New Project</button>
+            </div>
+            <div id="project-list" class="project-list project-list--flex"></div>
+          </section>
         </div>
-        <section class="projects-section projects-section--highlight">
-          <h3 class="projects-section-title">Projects</h3>
-          <p id="projects-prompt" class="projects-prompt">Create a project first. Enter a name below and click Save, then open it to add a goal.</p>
-          <input type="text" id="project-name-input" class="project-name-input" placeholder="Project name" aria-label="Project name" />
-          <div class="project-buttons">
-            <button id="btn-save-project" class="btn-secondary btn-sm">Save</button>
-            <button id="btn-new-project" class="btn-secondary btn-sm">New</button>
-          </div>
-          <div id="project-list" class="project-list"></div>
-        </section>
-      </div>
 
-      <!-- View 2: Project detail (child) — goal, run, log for selected project -->
-      <div id="view-project-detail" class="sidebar-view" hidden>
-        <button type="button" id="btn-back-to-projects" class="back-to-projects">
-          <span class="back-to-projects-icon" aria-hidden="true">←</span>
-          Back to Projects
-        </button>
-        <div class="project-detail-header">
-          <span id="project-detail-name" class="project-detail-name">Project</span>
-        </div>
-        <section class="goal-section goal-section--open">
-          <h3 class="goal-section-title">Goal</h3>
-          <p class="goal-section-desc">Saved goal for this project. Edit and run.</p>
-          <textarea id="goal-input" rows="3" placeholder="e.g. Search for weather in Tokyo, or open a URL…"></textarea>
-          <div class="provider-row">
-            <label for="ai-provider-select" class="sr-only">Model</label>
-            <select id="ai-provider-select" class="ai-provider-select" title="Planning model">
-              <option value="heuristic">Quick (no AI)</option>
-              <option value="gemini">Gemini</option>
-              <option value="ollama">Ollama</option>
-            </select>
-            <input type="password" id="api-key-input" class="api-key-input" placeholder="API key (optional)" autocomplete="off" title="Override API key from .env" />
-            <span id="api-key-label" class="sr-only">API key</span>
+        <div id="view-project-detail" class="sidebar-view" hidden>
+          <button type="button" id="btn-back-to-projects" class="back-to-projects">
+            <span class="back-to-projects-icon" aria-hidden="true">&#8592;</span>
+            Back to Projects
+          </button>
+          <div class="project-detail-header project-detail-header--row">
+            <span id="project-detail-name" class="project-detail-name">Project</span>
+            <input type="text" id="project-name-edit" class="project-name-input project-name-inline" hidden aria-label="Project name">
           </div>
-          <div class="execute-buttons">
-            <button id="btn-execute" class="btn-primary">
-              <span class="btn-text">Run</span>
-            </button>
-          </div>
-        </section>
-        <section class="status-section">
-          <div class="status-row">
-            <span class="status-label">Status</span>
-            <span id="status-state" class="status-value status-idle">Idle</span>
-          </div>
-          <div class="status-row">
-            <span class="status-label">Extension</span>
-            <span id="status-extension" class="status-value">Checking…</span>
-          </div>
-        </section>
-        <section class="actions-section">
-          <h3>Run log</h3>
-          <div id="action-log" class="action-log">
-            <div id="action-log-empty" class="action-log-empty">No runs yet. Set a goal above and click Run.</div>
-          </div>
-        </section>
-        <section class="approval-section" id="approval-section" hidden>
-          <h3>Confirm action</h3>
-          <p id="approval-message"></p>
-          <div class="approval-buttons">
-            <button id="btn-approve" class="btn-primary">Allow</button>
-            <button id="btn-reject" class="btn-secondary">Skip</button>
-          </div>
-        </section>
-      </div>
 
-      <footer class="sidebar-footer">
-        <div class="footer-meta">
-          <span class="footer-text">OpenBrowser</span>
-          <span class="footer-version">v0.1.0</span>
-        </div>
-        <div id="settings-menu" class="settings-menu">
-          <button type="button" id="btn-settings" class="btn-secondary btn-sm btn-settings">⚙ Settings</button>
-          <div id="settings-panel" class="settings-panel" hidden>
-            <h3 class="settings-title">Settings</h3>
-            <label for="settings-provider-select" class="settings-label">AI Provider</label>
-            <select id="settings-provider-select" class="ai-provider-select" title="AI provider">
-              <option value="heuristic" disabled>Quick (heuristic, no API key needed)</option>
-              <option value="gemini" selected>Gemini</option>
-              <option value="ollama" disabled>Ollama</option>
-            </select>
-            <label for="settings-api-key-input" class="settings-label">Gemini API Key</label>
-            <div id="settings-api-key-field" class="api-key-field">
-              <input type="password" id="settings-api-key-input" class="api-key-input" placeholder="Gemini API key" autocomplete="off" />
-              <button type="button" id="btn-settings-api-key-visibility" class="api-key-toggle" aria-label="Show API key" title="Show API key">
-                <span class="api-key-eye" aria-hidden="true"></span>
+          <section class="projects-section projects-section--highlight">
+            <div class="list-section-header">
+              <h3 class="projects-section-title">Tasks</h3>
+              <button id="btn-new-task" class="btn-secondary btn-sm" type="button">+ New Task</button>
+            </div>
+            <div id="task-list" class="project-list task-list"></div>
+          </section>
+
+          <section class="goal-section goal-section--open">
+            <h3 class="goal-section-title">Prompt</h3>
+            <p class="goal-section-desc">What do you want to automate?</p>
+            <textarea id="task-prompt-input" rows="3" placeholder="What do you want to automate?"></textarea>
+            <div class="execute-buttons">
+              <button id="btn-add-task-prompt" class="btn-primary" type="button">
+                <span class="btn-text">Add Prompt</span>
               </button>
             </div>
-            <label for="settings-model-select" class="settings-label">Models</label>
-            <select id="settings-model-select" class="ai-provider-select" title="Gemini model"></select>
-            <div class="settings-actions">
-              <button type="button" id="btn-settings-change-key" class="btn-primary btn-sm">Change Key</button>
+          </section>
+
+          <section class="actions-section">
+            <h3>Prompt History</h3>
+            <div id="prompt-history" class="action-log">
+              <div id="prompt-history-empty" class="action-log-empty">No prompts yet. Add a prompt above.</div>
             </div>
-            <p id="settings-message" class="settings-message" hidden></p>
-            <div class="settings-footer-actions">
-              <button type="button" id="btn-settings-remove-key" class="btn-secondary btn-sm">Remove API Key</button>
+          </section>
+        </div>
+
+        <footer class="sidebar-footer">
+          <div class="footer-meta">
+            <span class="footer-text">OpenBrowser</span>
+            <span class="footer-version">v0.1.0</span>
+          </div>
+          <div id="settings-menu" class="settings-menu">
+            <button type="button" id="btn-settings" class="btn-secondary btn-sm btn-settings">Settings</button>
+            <div id="settings-panel" class="settings-panel" hidden>
+              <h3 class="settings-title">Settings</h3>
+              <label for="settings-provider-select" class="settings-label">AI Provider</label>
+              <select id="settings-provider-select" class="ai-provider-select" title="AI provider">
+                <option value="heuristic" disabled>Quick (heuristic, no API key needed)</option>
+                <option value="gemini" selected>Gemini</option>
+                <option value="ollama" disabled>Ollama</option>
+              </select>
+              <label for="settings-api-key-input" class="settings-label">Gemini API Key</label>
+              <div id="settings-api-key-field" class="api-key-field">
+                <input type="password" id="settings-api-key-input" class="api-key-input" placeholder="Gemini API key" autocomplete="off">
+                <button type="button" id="btn-settings-api-key-visibility" class="api-key-toggle" aria-label="Show API key" title="Show API key">
+                  <span class="api-key-eye" aria-hidden="true"></span>
+                </button>
+              </div>
+              <label for="settings-model-select" class="settings-label">Models</label>
+              <select id="settings-model-select" class="ai-provider-select" title="Gemini model"></select>
+              <div class="settings-actions">
+                <button type="button" id="btn-settings-change-key" class="btn-primary btn-sm">Change Key</button>
+              </div>
+              <p id="settings-message" class="settings-message" hidden></p>
+              <div class="settings-footer-actions">
+                <button type="button" id="btn-settings-remove-key" class="btn-secondary btn-sm">Remove API Key</button>
+              </div>
             </div>
           </div>
-        </div>
-      </footer>
+        </footer>
       </div>
     </aside>
 
     <main class="browser-area">
       <div class="browser-chrome">
-        <span class="url-bar-icon" aria-hidden="true">◇</span>
-        <input type="text" id="url-bar" class="url-bar" placeholder="Enter URL or search…" value="https://www.google.com" aria-label="Address" spellcheck="false" />
+        <span class="url-bar-icon" aria-hidden="true">&#9671;</span>
+        <input type="text" id="url-bar" class="url-bar" placeholder="Enter URL or search..." value="https://www.google.com" aria-label="Address" spellcheck="false">
         <button id="btn-go" class="btn-go" type="button">Go</button>
       </div>
     </main>
