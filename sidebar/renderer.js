@@ -483,11 +483,16 @@ async function runWorkspaceTask() {
   await window.openBrowser?.browserNavigate?.(searchUrl);
 
   addWorkspaceLog("Extracting result...");
-  const title = (await window.openBrowser?.browserGetTitle?.()) || "Untitled";
-  const url = (await window.openBrowser?.browserGetUrl?.()) || searchUrl;
+  const extracted = await window.openBrowser?.browserExtractGoogleResult?.();
+  const title =
+    extracted?.title || (await window.openBrowser?.browserGetTitle?.()) || "Untitled";
+  const url =
+    extracted?.url || (await window.openBrowser?.browserGetUrl?.()) || searchUrl;
+  const aiText = extracted?.aiText || title;
+  const source = extracted?.source || "page-title";
 
   if (workspaceResult) {
-    workspaceResult.textContent = `Title: ${title}\nURL: ${url}`;
+    workspaceResult.textContent = `AI Text: ${aiText}\nTitle: ${title}\nURL: ${url}\nSource: ${source}`;
   }
   addWorkspaceLog("Done.");
 }

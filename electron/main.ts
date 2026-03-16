@@ -14,6 +14,7 @@ import { getAiConfig, type AiProvider } from "./config";
 import { planWithGemini } from "./gemini-planner";
 import { planWithOllama } from "./ollama-planner";
 import { executeInPage } from "./browser-executor";
+import { extractGoogleResult } from "./browser-result-extractor";
 import {
   listProjects,
   createProject,
@@ -395,6 +396,10 @@ function setupIPC() {
   });
   ipcMain.handle("browser-get-title", () => {
     return browserView?.webContents.getTitle() ?? "";
+  });
+  ipcMain.handle("browser-extract-google-result", async () => {
+    if (!browserView?.webContents) return null;
+    return extractGoogleResult(browserView.webContents);
   });
   ipcMain.handle("browser-execute-action", async (_e, action: unknown) => {
     if (!browserView?.webContents)

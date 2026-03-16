@@ -29,6 +29,8 @@ contextBridge.exposeInMainWorld("openBrowser", {
   browserNavigate: (url: string) => ipcRenderer.invoke("browser-navigate", url),
   browserGetUrl: () => ipcRenderer.invoke("browser-get-url"),
   browserGetTitle: () => ipcRenderer.invoke("browser-get-title"),
+  browserExtractGoogleResult: () =>
+    ipcRenderer.invoke("browser-extract-google-result"),
   onBrowserUrlChanged: (cb: (url: string) => void) => {
     ipcRenderer.on("browser-url-changed", (_e, url: string) => cb(url));
   },
