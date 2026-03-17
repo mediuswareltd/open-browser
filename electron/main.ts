@@ -38,6 +38,7 @@ let browserView: BrowserView | null = null;
 let bridgeServer: ReturnType<typeof createServer> | null = null;
 let extensionLoaded = false;
 let runtimeAiConfig = getAiConfig();
+let ipcInitialized = false;
 
 interface StoredAiConfig {
   aiProvider: AiProvider;
@@ -292,6 +293,8 @@ function clearAiConfigAndReset() {
 }
 
 function setupIPC() {
+  if (ipcInitialized) return;
+  ipcInitialized = true;
   ipcMain.handle("get-bridge-port", () => bridgeServer?.port ?? 0);
   ipcMain.handle(
     "get-logo-url",
@@ -398,11 +401,12 @@ app.whenReady().then(async () => {
   const storedAiConfig = readStoredAiConfig();
   if (storedAiConfig) applyStoredAiConfig(storedAiConfig);
 
+  setupIPC();
+
   // Start bridge server for extension <-> runtime communication
   bridgeServer = createServer();
   await bridgeServer.start();
 
-  setupIPC();
   createWindow();
 });
 
@@ -412,5 +416,6 @@ app.on("window-all-closed", () => {
 });
 
 app.on("activate", () => {
+  setupIPC();
   if (mainWindow === null) createWindow();
 });
