@@ -57,6 +57,14 @@ const btnSettingsApiKeyVisibility = document.getElementById(
 const settingsModelSelect = document.getElementById("settings-model-select");
 const btnSettingsChangeKey = document.getElementById("btn-settings-change-key");
 const btnSettingsRemoveKey = document.getElementById("btn-settings-remove-key");
+const btnSettingsProfiles = document.getElementById("btn-settings-profiles");
+const settingsProfilesPanel = document.getElementById(
+  "settings-profiles-panel",
+);
+const settingsProfilesList = document.getElementById("settings-profiles-list");
+const btnSettingsProfileNew = document.getElementById(
+  "btn-settings-profile-new",
+);
 const settingsMessage = document.getElementById("settings-message");
 
 const WELCOME_DISMISSED_KEY = "openbrowser-welcome-dismissed";
@@ -74,6 +82,7 @@ let currentProjectTabs = [];
 let currentTabId = null;
 let currentAiModel = "gemini-2.5-flash";
 let aiProviderSelectBound = false;
+let profileState = { profiles: [], activeProfileId: "default" };
 
 function createTaskTabId() {
   return `t-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -484,6 +493,188 @@ function setSettingsMessage(message = "", kind = "") {
   settingsMessage.hidden = !message;
 }
 
+function closeProfileActionMenus() {
+  document
+    .querySelectorAll(".settings-profile-menu")
+    .forEach((menu) => (menu.hidden = true));
+}
+
+function setProfilesPanelOpen(open) {
+  if (!settingsProfilesPanel) return;
+  settingsProfilesPanel.hidden = !open;
+  settingsProfilesPanel.classList.toggle("open", open);
+  if (!open) closeProfileActionMenus();
+}
+
+async function refreshProfilesState() {
+  try {
+    const next = await window.openBrowser?.getProfiles?.();
+    if (next?.profiles && next?.activeProfileId) profileState = next;
+  } catch (_) {}
+  return profileState;
+}
+
+async function commitProfileRename(profileId, nextName) {
+  const trimmed = String(nextName || "").trim();
+  if (!trimmed) return false;
+  if (!window.openBrowser?.renameProfile) {
+    setSettingsMessage("Profile rename unavailable. Restart app.", "error");
+    return false;
+  }
+  try {
+    const next = await window.openBrowser.renameProfile(profileId, trimmed);
+    if (next?.profiles && next?.activeProfileId) profileState = next;
+    else await refreshProfilesState();
+    renderProfilesList();
+    setSettingsMessage("Profile renamed", "success");
+    return true;
+  } catch (_) {
+    setSettingsMessage("Failed to rename profile", "error");
+    return false;
+  }
+}
+
+function startInlineProfileRename(profile, item, selectBtn) {
+  if (!profile || !item || !selectBtn) return;
+  closeProfileActionMenus();
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "settings-profile-name-input";
+  input.value = profile.name || profile.id;
+  let committed = false;
+  const finish = async (save) => {
+    if (committed) return;
+    committed = true;
+    if (save) {
+      const ok = await commitProfileRename(profile.id, input.value);
+      if (!ok) renderProfilesList();
+      return;
+    }
+    renderProfilesList();
+  };
+  input.addEventListener("click", (e) => e.stopPropagation());
+  input.addEventListener("keydown", async (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      await finish(true);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      await finish(false);
+    }
+  });
+  input.addEventListener("blur", () => {
+    finish(true);
+  });
+  selectBtn.replaceWith(input);
+  input.focus();
+  input.select();
+}
+
+function renderProfilesList() {
+  if (!settingsProfilesList) return;
+  settingsProfilesList.innerHTML = "";
+  const list = Array.isArray(profileState?.profiles)
+    ? profileState.profiles
+    : [];
+  if (!list.length) {
+    const empty = document.createElement("div");
+    empty.className = "project-list-empty";
+    empty.textContent = "No profiles";
+    settingsProfilesList.appendChild(empty);
+    return;
+  }
+  list.forEach((profile) => {
+    const item = document.createElement("div");
+    const isActive = profile.id === profileState.activeProfileId;
+    item.className = "settings-profile-item" + (isActive ? " active" : "");
+
+    const select = document.createElement("button");
+    select.type = "button";
+    select.className = "settings-profile-select";
+    select.textContent = profile.name || profile.id;
+    select.title = profile.id;
+    select.ondblclick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      startInlineProfileRename(profile, item, select);
+    };
+    select.onclick = async () => {
+      const next = await window.openBrowser?.setActiveProfile?.(profile.id);
+      if (next?.profiles && next?.activeProfileId) profileState = next;
+      renderProfilesList();
+      setSettingsMessage(
+        `Active profile: ${profile.name || profile.id}`,
+        "success",
+      );
+    };
+    item.ondblclick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      startInlineProfileRename(profile, item, select);
+    };
+
+    const active = document.createElement("span");
+    active.className = "settings-profile-active";
+    active.textContent = isActive ? "Active" : "";
+
+    const actions = document.createElement("div");
+    actions.className = "settings-profile-actions";
+
+    const menuBtn = document.createElement("button");
+    menuBtn.type = "button";
+    menuBtn.className = "settings-profile-menu-btn";
+    menuBtn.textContent = "\u22EE";
+    menuBtn.title = "Profile options";
+
+    const menu = document.createElement("div");
+    menu.className = "settings-profile-menu";
+    menu.hidden = true;
+
+    menuBtn.onclick = (e) => {
+      e.stopPropagation();
+      const wasOpen = menu.hidden === false;
+      closeProfileActionMenus();
+      menu.hidden = wasOpen;
+    };
+
+    const renameBtn = document.createElement("button");
+    renameBtn.type = "button";
+    renameBtn.className = "settings-profile-menu-action";
+    renameBtn.textContent = "Rename";
+    renameBtn.onclick = async (e) => {
+      e.stopPropagation();
+      menu.hidden = true;
+      startInlineProfileRename(profile, item, select);
+    };
+
+    menu.appendChild(renameBtn);
+
+    if (profile.id !== "default") {
+      const deleteBtn = document.createElement("button");
+      deleteBtn.type = "button";
+      deleteBtn.className = "settings-profile-menu-action danger";
+      deleteBtn.textContent = "Delete";
+      deleteBtn.onclick = async (e) => {
+        e.stopPropagation();
+        menu.hidden = true;
+        if (!window.confirm(`Delete profile "${profile.name || profile.id}"?`))
+          return;
+        const next = await window.openBrowser?.deleteProfile?.(profile.id);
+        if (next?.profiles && next?.activeProfileId) profileState = next;
+        renderProfilesList();
+      };
+      menu.appendChild(deleteBtn);
+    }
+
+    actions.appendChild(menuBtn);
+    actions.appendChild(menu);
+    item.appendChild(select);
+    item.appendChild(active);
+    item.appendChild(actions);
+    settingsProfilesList.appendChild(item);
+  });
+}
+
 function setApiKeyInputVisibility(inputEl, buttonEl, visible) {
   if (!inputEl || !buttonEl) return;
   inputEl.type = visible ? "text" : "password";
@@ -575,7 +766,10 @@ function setupSettingsMenu() {
     if (!settingsPanel) return;
     const opening = settingsPanel.hidden;
     settingsPanel.hidden = !settingsPanel.hidden;
-    if (!opening) return;
+    if (!opening) {
+      setProfilesPanelOpen(false);
+      return;
+    }
     if (settingsProviderSelect)
       settingsProviderSelect.value = aiProviderSelect?.value || "gemini";
     if (settingsApiKeyField) settingsApiKeyField.style.display = "";
@@ -595,12 +789,58 @@ function setupSettingsMenu() {
       settingsApiKeyInput?.value?.trim() || "",
       currentAiModel,
     );
+    await refreshProfilesState();
+    renderProfilesList();
+    setProfilesPanelOpen(false);
     setSettingsMessage("");
   });
 
   document.addEventListener("click", (e) => {
     if (!settingsPanel || settingsPanel.hidden) return;
-    if (!settingsMenu?.contains(e.target)) settingsPanel.hidden = true;
+    if (!settingsMenu?.contains(e.target)) {
+      settingsPanel.hidden = true;
+      setProfilesPanelOpen(false);
+      closeProfileActionMenus();
+    }
+  });
+
+  btnSettingsProfiles?.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    const willOpen = settingsProfilesPanel?.hidden !== false;
+    if (willOpen) {
+      await refreshProfilesState();
+      renderProfilesList();
+    }
+    setProfilesPanelOpen(willOpen);
+  });
+
+  btnSettingsProfileNew?.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    const created = await window.openBrowser?.createProfile?.();
+    if (created?.profiles && created?.activeProfileId) profileState = created;
+    renderProfilesList();
+    const createdId = created?.createdProfileId;
+    if (!createdId) return;
+    const profile = profileState.profiles?.find((p) => p.id === createdId);
+    const nextName = window.prompt(
+      "Profile name",
+      profile?.name || "New Profile",
+    );
+    if (nextName === null) return;
+    const trimmed = nextName.trim();
+    if (!trimmed) return;
+    try {
+      const renamed = await window.openBrowser?.renameProfile?.(
+        createdId,
+        trimmed,
+      );
+      if (renamed?.profiles && renamed?.activeProfileId) profileState = renamed;
+      else await refreshProfilesState();
+      renderProfilesList();
+      setSettingsMessage("Profile renamed", "success");
+    } catch (_) {
+      setSettingsMessage("Failed to rename profile", "error");
+    }
   });
 
   btnSettingsChangeKey?.addEventListener("click", async () => {
@@ -633,6 +873,7 @@ function setupSettingsMenu() {
       return;
     }
     if (settingsPanel) settingsPanel.hidden = true;
+    setProfilesPanelOpen(false);
     window.location.reload();
   });
 }

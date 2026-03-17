@@ -19,7 +19,6 @@ import {
   saveProject,
   loadProject,
   deleteProject,
-  type SavedProject,
 } from "./project-store";
 
 const isDev = process.env.NODE_ENV === "development";
@@ -29,6 +28,9 @@ const extensionPath = path.join(projectRoot, "extension");
 const configFilePath = path.join(userDataPath, "config.json");
 const SIDEBAR_EXPANDED = 320;
 const SIDEBAR_COLLAPSED = 52;
+const BROWSER_PARTITION_PREFIX = "persist:openbrowser:";
+const DEFAULT_PROFILE_ID = "default";
+const DEFAULT_PROFILE_NAME = "Default";
 /* Match address bar visual height: 12px padding-top + 38px bar + 20px margin-bottom = 70 */
 const URL_BAR_HEIGHT = 72;
 
@@ -36,14 +38,31 @@ let mainWindow: BrowserWindow | null = null;
 let sidebarWidth = SIDEBAR_EXPANDED;
 let browserView: BrowserView | null = null;
 let bridgeServer: ReturnType<typeof createServer> | null = null;
-let extensionLoaded = false;
+const extensionLoadedPartitions = new Set<string>();
 let runtimeAiConfig = getAiConfig();
 let ipcInitialized = false;
+let profiles: StoredProfile[] = [
+  { id: DEFAULT_PROFILE_ID, name: DEFAULT_PROFILE_NAME },
+];
+let activeProfileId = DEFAULT_PROFILE_ID;
 
 interface StoredAiConfig {
   aiProvider: AiProvider;
   geminiApiKey: string;
   model?: string;
+}
+
+interface StoredProfile {
+  id: string;
+  name: string;
+}
+
+interface StoredAppConfig {
+  aiProvider?: AiProvider;
+  geminiApiKey?: string;
+  model?: string;
+  profiles?: StoredProfile[];
+  activeProfileId?: string;
 }
 
 function toAiProvider(value: unknown): AiProvider | null {
@@ -52,35 +71,118 @@ function toAiProvider(value: unknown): AiProvider | null {
   return null;
 }
 
-function readStoredAiConfig(): StoredAiConfig | null {
+function normalizeProfileId(value: unknown): string {
+  const raw = String(value || "")
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, "-")
+    .replace(/[^a-z0-9_-]/g, "");
+  return raw || DEFAULT_PROFILE_ID;
+}
+
+function profilePartition(profileId = activeProfileId): string {
+  return `${BROWSER_PARTITION_PREFIX}${normalizeProfileId(profileId)}`;
+}
+
+function readStoredAppConfig(): StoredAppConfig | null {
   if (!fs.existsSync(configFilePath)) return null;
   try {
-    const raw = JSON.parse(fs.readFileSync(configFilePath, "utf-8")) as {
-      aiProvider?: unknown;
-      geminiApiKey?: unknown;
-      model?: unknown;
-    };
-    const aiProvider = toAiProvider(raw.aiProvider);
-    if (!aiProvider) return null;
-    return {
-      aiProvider,
-      geminiApiKey: String(raw.geminiApiKey || "").trim(),
-      model: raw.model ? String(raw.model).trim() : undefined,
-    };
+    return JSON.parse(
+      fs.readFileSync(configFilePath, "utf-8"),
+    ) as StoredAppConfig;
   } catch {
     return null;
   }
 }
 
-function writeStoredAiConfig(config: StoredAiConfig) {
+function writeStoredAppConfig(config: StoredAppConfig) {
   fs.mkdirSync(userDataPath, { recursive: true });
   fs.writeFileSync(configFilePath, JSON.stringify(config, null, 2), "utf-8");
 }
 
-function clearStoredAiConfig() {
-  if (fs.existsSync(configFilePath)) {
-    fs.unlinkSync(configFilePath);
+function readStoredAiConfig(): StoredAiConfig | null {
+  const raw = readStoredAppConfig();
+  if (!raw) return null;
+  const aiProvider = toAiProvider(raw.aiProvider);
+  if (!aiProvider) return null;
+  return {
+    aiProvider,
+    geminiApiKey: String(raw.geminiApiKey || "").trim(),
+    model: raw.model ? String(raw.model).trim() : undefined,
+  };
+}
+
+function normalizeProfilesState(
+  rawProfiles: unknown,
+  rawActiveProfileId: unknown,
+): { profiles: StoredProfile[]; activeProfileId: string } {
+  const list = Array.isArray(rawProfiles) ? rawProfiles : [];
+  const map = new Map<string, StoredProfile>();
+  list.forEach((profile, idx) => {
+    const p = (profile || {}) as { id?: unknown; name?: unknown };
+    const id = normalizeProfileId(p.id || `profile-${idx + 1}`);
+    const name =
+      String(p.name || `Profile ${idx + 1}`).trim() || `Profile ${idx + 1}`;
+    if (!map.has(id)) map.set(id, { id, name });
+  });
+  if (!map.has(DEFAULT_PROFILE_ID)) {
+    map.set(DEFAULT_PROFILE_ID, {
+      id: DEFAULT_PROFILE_ID,
+      name: DEFAULT_PROFILE_NAME,
+    });
   }
+  const normalizedProfiles = Array.from(map.values());
+  const activeId = normalizeProfileId(rawActiveProfileId);
+  const nextActive = normalizedProfiles.some((p) => p.id === activeId)
+    ? activeId
+    : DEFAULT_PROFILE_ID;
+  return { profiles: normalizedProfiles, activeProfileId: nextActive };
+}
+
+function readStoredProfilesState(): {
+  profiles: StoredProfile[];
+  activeProfileId: string;
+} {
+  const raw = readStoredAppConfig();
+  return normalizeProfilesState(raw?.profiles, raw?.activeProfileId);
+}
+
+function writeStoredAiConfig(config: StoredAiConfig) {
+  const current = readStoredAppConfig() || {};
+  writeStoredAppConfig({
+    ...current,
+    aiProvider: config.aiProvider,
+    geminiApiKey: config.geminiApiKey,
+    model: config.model,
+  });
+}
+
+function writeStoredProfilesState(
+  nextProfiles: StoredProfile[],
+  activeId: string,
+) {
+  const current = readStoredAppConfig() || {};
+  const normalized = normalizeProfilesState(nextProfiles, activeId);
+  profiles = normalized.profiles;
+  activeProfileId = normalized.activeProfileId;
+  writeStoredAppConfig({
+    ...current,
+    profiles: profiles,
+    activeProfileId,
+  });
+}
+
+function clearStoredAiConfig() {
+  const current = readStoredAppConfig();
+  if (!current) return;
+  delete current.aiProvider;
+  delete current.geminiApiKey;
+  delete current.model;
+  if (!Object.keys(current).length) {
+    if (fs.existsSync(configFilePath)) fs.unlinkSync(configFilePath);
+    return;
+  }
+  writeStoredAppConfig(current);
 }
 
 function applyStoredAiConfig(config: StoredAiConfig) {
@@ -90,6 +192,14 @@ function applyStoredAiConfig(config: StoredAiConfig) {
     geminiApiKey: config.geminiApiKey.trim(),
     model: config.model?.trim() || runtimeAiConfig.model,
   };
+}
+
+function applyStoredProfilesState(state: {
+  profiles: StoredProfile[];
+  activeProfileId: string;
+}) {
+  profiles = state.profiles;
+  activeProfileId = state.activeProfileId;
 }
 
 function requestJson(url: string): Promise<{ status: number; data: unknown }> {
@@ -190,18 +300,19 @@ async function getSavedAiConfig() {
   return { hasConfig: true, config };
 }
 
-function createBrowserView(win: BrowserWindow) {
-  const ses = session.fromPartition(PERSISTENT_PARTITION);
+async function createBrowserView(win: BrowserWindow, initialUrl = "") {
+  const partition = profilePartition();
+  await loadExtensionForPartition(partition);
   browserView = new BrowserView({
     webPreferences: {
-      partition: PERSISTENT_PARTITION,
+      partition,
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
   win.setBrowserView(browserView);
   updateBrowserViewBounds(win);
-  browserView.webContents.loadURL("https://www.google.com");
+  browserView.webContents.loadURL(initialUrl || "https://www.google.com");
 
   browserView.webContents.on("did-navigate-in-page", (_e, url) => {
     win.webContents.send("browser-url-changed", url);
@@ -251,31 +362,127 @@ function createWindow() {
   });
 }
 
-const PERSISTENT_PARTITION = "persist:openbrowser";
-
-async function loadExtension() {
+async function loadExtensionForPartition(partition: string) {
+  if (extensionLoadedPartitions.has(partition)) return true;
   await app.whenReady();
-  const ses = session.fromPartition(PERSISTENT_PARTITION);
+  const ses = session.fromPartition(partition);
 
   try {
     const ext = await ses.loadExtension(extensionPath, {
       allowFileAccess: true,
     });
+    extensionLoadedPartitions.add(partition);
     console.log("[OpenBrowser] Extension loaded:", ext.id, ext.name);
     return true;
   } catch (err) {
+    const msg = String((err as Error)?.message || err || "");
+    if (msg.toLowerCase().includes("already loaded")) {
+      extensionLoadedPartitions.add(partition);
+      return true;
+    }
     console.error("[OpenBrowser] Failed to load extension:", err);
     return false;
   }
 }
 
+async function recreateBrowserViewForActiveProfile() {
+  if (!mainWindow || !browserView) return;
+  const currentUrl =
+    browserView?.webContents?.getURL() || "https://www.google.com";
+  try {
+    mainWindow.removeBrowserView(browserView);
+  } catch (_) {}
+  browserView = null;
+  await createBrowserView(mainWindow, currentUrl);
+}
+
+function getProfilesPayload() {
+  return { profiles, activeProfileId };
+}
+
+function resolveExistingProfileId(profileId: string): string | null {
+  const raw = String(profileId || "").trim();
+  if (!raw) return null;
+  const exact = profiles.find((p) => p.id === raw);
+  if (exact) return exact.id;
+  const normalized = normalizeProfileId(raw);
+  const match = profiles.find((p) => normalizeProfileId(p.id) === normalized);
+  return match?.id || null;
+}
+
+function getNextProfileName() {
+  let n = 1;
+  const used = new Set(profiles.map((p) => p.name.toLowerCase()));
+  let candidate = `Profile ${n}`;
+  while (used.has(candidate.toLowerCase())) {
+    n += 1;
+    candidate = `Profile ${n}`;
+  }
+  return candidate;
+}
+
+async function createProfile(name?: string) {
+  const nextIdBase = normalizeProfileId(name || getNextProfileName());
+  let id = nextIdBase;
+  let i = 2;
+  while (profiles.some((p) => p.id === id)) {
+    id = `${nextIdBase}-${i}`;
+    i += 1;
+  }
+  const profile: StoredProfile = {
+    id,
+    name: String(name || getNextProfileName()).trim() || getNextProfileName(),
+  };
+  profiles = [...profiles, profile];
+  writeStoredProfilesState(profiles, activeProfileId);
+  return { ...getProfilesPayload(), createdProfileId: profile.id };
+}
+
+async function renameProfile(profileId: string, name: string) {
+  const id = resolveExistingProfileId(profileId);
+  if (!id) return getProfilesPayload();
+  const nextName = String(name || "").trim();
+  if (!nextName) return getProfilesPayload();
+  profiles = profiles.map((p) => (p.id === id ? { ...p, name: nextName } : p));
+  writeStoredProfilesState(profiles, activeProfileId);
+  return getProfilesPayload();
+}
+
+async function deleteProfile(profileId: string) {
+  const id = resolveExistingProfileId(profileId);
+  if (!id) return getProfilesPayload();
+  if (id === DEFAULT_PROFILE_ID) return getProfilesPayload();
+  const exists = profiles.some((p) => p.id === id);
+  if (!exists) return getProfilesPayload();
+  profiles = profiles.filter((p) => p.id !== id);
+  if (!profiles.length) {
+    profiles = [{ id: DEFAULT_PROFILE_ID, name: DEFAULT_PROFILE_NAME }];
+  }
+  if (!profiles.some((p) => p.id === activeProfileId)) {
+    activeProfileId = profiles.some((p) => p.id === DEFAULT_PROFILE_ID)
+      ? DEFAULT_PROFILE_ID
+      : profiles[0].id;
+    await recreateBrowserViewForActiveProfile();
+  }
+  writeStoredProfilesState(profiles, activeProfileId);
+  return getProfilesPayload();
+}
+
+async function setActiveProfile(profileId: string) {
+  const id = resolveExistingProfileId(profileId);
+  if (!id || !profiles.some((p) => p.id === id)) return getProfilesPayload();
+  if (id === activeProfileId) return getProfilesPayload();
+  activeProfileId = id;
+  writeStoredProfilesState(profiles, activeProfileId);
+  await recreateBrowserViewForActiveProfile();
+  return getProfilesPayload();
+}
+
 async function startMainInterface() {
   if (!mainWindow) return { started: false };
-  if (!extensionLoaded) {
-    extensionLoaded = await loadExtension();
-  }
+  await loadExtensionForPartition(profilePartition());
   if (!browserView) {
-    createBrowserView(mainWindow);
+    await createBrowserView(mainWindow);
   }
   return { started: true };
 }
@@ -306,7 +513,7 @@ function setupIPC() {
   });
   ipcMain.handle("get-sidebar-width", () => sidebarWidth);
   ipcMain.handle("get-user-data-path", () => userDataPath);
-  ipcMain.handle("get-webview-partition", () => PERSISTENT_PARTITION);
+  ipcMain.handle("get-webview-partition", () => profilePartition());
   ipcMain.handle("get-saved-ai-config", async () => getSavedAiConfig());
   ipcMain.handle("verify-and-save-ai-config", async (_e, data: unknown) =>
     verifyAndSaveAiConfig(
@@ -323,6 +530,15 @@ function setupIPC() {
   });
   ipcMain.handle("clear-ai-config-and-reset", () => clearAiConfigAndReset());
   ipcMain.handle("start-main-interface", async () => startMainInterface());
+  ipcMain.handle("profiles-get", () => getProfilesPayload());
+  ipcMain.handle("profiles-create", (_e, name?: string) => createProfile(name));
+  ipcMain.handle("profiles-rename", (_e, id: string, name: string) =>
+    renameProfile(id, name),
+  );
+  ipcMain.handle("profiles-delete", (_e, id: string) => deleteProfile(id));
+  ipcMain.handle("profiles-set-active", (_e, id: string) =>
+    setActiveProfile(id),
+  );
   ipcMain.handle("browser-navigate", (_e, url: string) => {
     browserView?.webContents.loadURL(url);
   });
@@ -398,6 +614,12 @@ function setupIPC() {
 app.whenReady().then(async () => {
   // Use persistent user data for profile
   app.setPath("userData", userDataPath);
+  const storedProfilesState = readStoredProfilesState();
+  applyStoredProfilesState(storedProfilesState);
+  writeStoredProfilesState(
+    storedProfilesState.profiles,
+    storedProfilesState.activeProfileId,
+  );
   const storedAiConfig = readStoredAiConfig();
   if (storedAiConfig) applyStoredAiConfig(storedAiConfig);
 
