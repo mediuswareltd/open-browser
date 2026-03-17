@@ -365,6 +365,8 @@ body {
   flex: 1;
   min-height: 0;
   gap: var(--space-lg);
+  overflow-y: visible;
+  overflow-x: hidden;
 }
 
 .sidebar-view:not([hidden]) {
@@ -373,6 +375,11 @@ body {
 
 .sidebar-view[hidden] {
   display: none !important;
+}
+
+#view-project-detail {
+  overflow-y: visible;
+  overflow-x: hidden;
 }
 
 .back-to-projects {
@@ -408,6 +415,178 @@ body {
   color: var(--text);
 }
 
+.task-tabs-section {
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-md);
+  background: var(--bg-sidebar);
+  margin-bottom: var(--space-lg);
+  max-height: 180px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #7a7a7a transparent;
+}
+
+.task-tabs-section::-webkit-scrollbar {
+  width: 6px;
+}
+
+.task-tabs-section::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.task-tabs-section::-webkit-scrollbar-thumb {
+  background: #7a7a7a;
+  border-radius: 999px;
+}
+
+.task-tabs-section::-webkit-scrollbar-thumb:hover {
+  background: #8a8a8a;
+}
+
+.task-tabs-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.task-tabs-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.task-tab-list {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px;
+  max-height: clamp(72px, 18vh, 246px);
+}
+
+.task-tab-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.task-tab-item:hover {
+  background: var(--bg-elevated);
+}
+
+.task-tab-item.active {
+  background: var(--muted);
+  border: 1px solid var(--border);
+}
+
+.task-tab-item-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+
+.task-tab-item.active .task-tab-item-name {
+  color: var(--text);
+}
+
+.task-tab-item-actions {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.task-tab-item-menu-btn {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  font-size: 0.9rem;
+  line-height: 1;
+  background: transparent;
+  color: var(--text-muted);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.task-tab-item-menu-btn:hover {
+  background: var(--bg-elevated);
+  color: var(--text);
+}
+
+.task-tab-item-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 10;
+  min-width: 110px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-sidebar);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.task-tab-item-menu[hidden] {
+  display: none !important;
+}
+
+.task-tab-item-menu-action {
+  width: 100%;
+  text-align: left;
+  padding: 7px 8px;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  background: none;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.task-tab-item-menu-action:hover {
+  background: var(--bg-elevated);
+  color: var(--text);
+}
+
+.task-tab-item-menu-action.danger:hover {
+  color: var(--error);
+}
+
+.task-tab-item-name-input {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  padding: 4px 8px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-focus);
+  border-radius: 4px;
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 0.82rem;
+}
+
+.task-tab-item-name-input:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--ring);
+}
+
+.task-tab-empty {
+  padding: 10px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
 /* Goal section — inside project detail (child view) */
 .goal-section {
   flex-shrink: 0;
@@ -782,7 +961,7 @@ body {
 /* Run log — takes remaining space, always scrollable */
 .actions-section {
   flex: 1;
-  min-height: 100px;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -864,7 +1043,7 @@ body {
 /* Footer */
 .sidebar-footer {
   flex-shrink: 0;
-  margin-top: var(--space-lg);
+  margin-top: auto;
   padding-top: var(--space-md);
   border-top: 1px solid var(--border);
   display: flex;
@@ -873,7 +1052,10 @@ body {
   gap: 8px;
   font-size: 0.75rem;
   color: var(--text-muted);
-  position: relative;
+  position: sticky;
+  bottom: 0;
+  z-index: 6;
+  background: var(--bg-sidebar);
 }
 
 .footer-meta {
@@ -1065,21 +1247,23 @@ textarea:focus-visible {
 }
 
 /* Scrollbars */
+.sidebar-content,
+.sidebar-view,
+#view-project-detail,
+.action-log,
+.project-list,
+.task-tab-list {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
 .sidebar-content::-webkit-scrollbar,
+.sidebar-view::-webkit-scrollbar,
+#view-project-detail::-webkit-scrollbar,
 .action-log::-webkit-scrollbar,
-.project-list::-webkit-scrollbar {
-  width: 6px;
-}
-
-.sidebar-content::-webkit-scrollbar-thumb,
-.action-log::-webkit-scrollbar-thumb,
-.project-list::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 3px;
-}
-
-.sidebar-content::-webkit-scrollbar-thumb:hover,
-.action-log::-webkit-scrollbar-thumb:hover,
-.project-list::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
+.project-list::-webkit-scrollbar,
+.task-tab-list::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
 }

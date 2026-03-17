@@ -39,6 +39,8 @@ const viewProjects = document.getElementById("view-projects");
 const viewProjectDetail = document.getElementById("view-project-detail");
 const btnBackToProjects = document.getElementById("btn-back-to-projects");
 const projectDetailName = document.getElementById("project-detail-name");
+const taskTabList = document.getElementById("task-tab-list");
+const btnNewTaskTab = document.getElementById("btn-new-task-tab");
 const sidebar = document.getElementById("sidebar");
 const sidebarToggle = document.getElementById("sidebar-toggle");
 const settingsMenu = document.getElementById("settings-menu");
@@ -68,8 +70,311 @@ let pendingApproval = null;
 let currentProjectId = null;
 let currentPlan = [];
 let actionTrace = [];
+let currentProjectTabs = [];
+let currentTabId = null;
 let currentAiModel = "gemini-2.5-flash";
 let aiProviderSelectBound = false;
+
+function createTaskTabId() {
+  return `t-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function normalizeTraceEntries(entries) {
+  if (!Array.isArray(entries)) return [];
+  return entries.map((entry) => ({
+    time: String(entry?.time || ""),
+    msg: String(entry?.msg || ""),
+    kind: String(entry?.kind || "info"),
+  }));
+}
+
+function getNextTaskTabName() {
+  const base = "New Task";
+  let index = 1;
+  let name = base;
+  const existingNames = new Set(
+    currentProjectTabs.map((tab) => String(tab?.name || "")),
+  );
+  while (existingNames.has(name)) {
+    index += 1;
+    name = `${base} ${index}`;
+  }
+  return name;
+}
+
+function createDefaultTaskTab(prompt = "", logs = []) {
+  return {
+    id: createTaskTabId(),
+    name: getNextTaskTabName(),
+    prompt: String(prompt || ""),
+    logs: normalizeTraceEntries(logs),
+  };
+}
+
+function normalizeProjectTabs(project = {}) {
+  const legacyGoal = String(project.goal || "");
+  const legacyTrace = normalizeTraceEntries(project.trace);
+  let tabs = Array.isArray(project.tabs)
+    ? project.tabs.map((tab, idx) => ({
+        id: String(tab?.id || createTaskTabId()).trim() || createTaskTabId(),
+        name:
+          String(tab?.name || `New Task ${idx + 1}`).trim() ||
+          `New Task ${idx + 1}`,
+        prompt: String(tab?.prompt || ""),
+        logs: normalizeTraceEntries(tab?.logs),
+      }))
+    : [];
+  if (!tabs.length) {
+    tabs = [
+      {
+        id: createTaskTabId(),
+        name: "New Task",
+        prompt: legacyGoal,
+        logs: legacyTrace,
+      },
+    ];
+  }
+  let activeTabId = String(project.activeTabId || "").trim();
+  if (!activeTabId || !tabs.some((tab) => tab.id === activeTabId)) {
+    activeTabId = tabs[0].id;
+  }
+  const activeTab = tabs.find((tab) => tab.id === activeTabId) || tabs[0];
+  return {
+    ...project,
+    tabs,
+    activeTabId,
+    goal: String(activeTab.prompt || ""),
+    trace: normalizeTraceEntries(activeTab.logs),
+  };
+}
+
+function getActiveTaskTab() {
+  return currentProjectTabs.find((tab) => tab.id === currentTabId) || null;
+}
+
+function ensureTaskTabs(goalFallback = "", logsFallback = []) {
+  if (!currentProjectTabs.length) {
+    const fallback = createDefaultTaskTab(goalFallback, logsFallback);
+    currentProjectTabs = [fallback];
+    currentTabId = fallback.id;
+    return;
+  }
+  if (
+    !currentTabId ||
+    !currentProjectTabs.some((tab) => tab.id === currentTabId)
+  ) {
+    currentTabId = currentProjectTabs[0].id;
+  }
+}
+
+function syncActiveTaskTabFromUi() {
+  ensureTaskTabs(goalInput?.value || "", actionTrace);
+  const activeTab = getActiveTaskTab();
+  if (!activeTab) return;
+  activeTab.prompt = String(goalInput?.value || "");
+  activeTab.logs = normalizeTraceEntries(actionTrace);
+}
+
+function renderActionLogEntries(entries = []) {
+  while (actionLog?.firstChild) actionLog.removeChild(actionLog.firstChild);
+  const safeEntries = normalizeTraceEntries(entries);
+  if (!safeEntries.length) {
+    if (actionLogEmpty) {
+      actionLogEmpty.classList.remove("hidden");
+      actionLog.appendChild(actionLogEmpty);
+    }
+    return;
+  }
+  safeEntries.forEach((t) => {
+    const el = document.createElement("div");
+    el.className = "action-log-entry " + (t.kind || "info");
+    el.textContent = t.time + " " + t.msg;
+    actionLog.appendChild(el);
+  });
+  actionLogEmpty?.classList.add("hidden");
+}
+
+function applyActiveTaskTabToUi() {
+  ensureTaskTabs(goalInput?.value || "", actionTrace);
+  const activeTab = getActiveTaskTab();
+  if (!activeTab) return;
+  if (goalInput) goalInput.value = String(activeTab.prompt || "");
+  actionTrace = normalizeTraceEntries(activeTab.logs);
+  renderActionLogEntries(actionTrace);
+  renderTaskTabs();
+}
+
+function renderTaskTabs() {
+  if (!taskTabList) return;
+  taskTabList.innerHTML = "";
+  if (!currentProjectTabs.length) {
+    const empty = document.createElement("div");
+    empty.className = "task-tab-empty";
+    empty.textContent = "No tabs yet";
+    taskTabList.appendChild(empty);
+    return;
+  }
+  currentProjectTabs.forEach((tab) => {
+    const item = document.createElement("div");
+    item.className =
+      "task-tab-item" + (tab.id === currentTabId ? " active" : "");
+    item.onclick = () => switchTaskTab(tab.id);
+
+    const title = document.createElement("span");
+    title.className = "task-tab-item-name";
+    title.textContent = tab.name || "New Task";
+    title.title = tab.prompt || "";
+    item.ondblclick = (e) => {
+      e.stopPropagation();
+      startTaskTabInlineRename(tab.id, title);
+    };
+
+    const actions = document.createElement("div");
+    actions.className = "task-tab-item-actions";
+
+    const menuBtn = document.createElement("button");
+    menuBtn.type = "button";
+    menuBtn.className = "task-tab-item-menu-btn";
+    menuBtn.textContent = "\u22EE";
+    menuBtn.title = "Tab options";
+    menuBtn.onclick = (e) => {
+      e.stopPropagation();
+      const isOpen = menu.hidden === false;
+      closeTaskTabMenus();
+      menu.hidden = isOpen;
+      if (!isOpen) item.classList.add("menu-open");
+    };
+
+    const menu = document.createElement("div");
+    menu.className = "task-tab-item-menu";
+    menu.hidden = true;
+
+    const renameBtn = document.createElement("button");
+    renameBtn.type = "button";
+    renameBtn.className = "task-tab-item-menu-action";
+    renameBtn.textContent = "Rename";
+    renameBtn.onclick = (e) => {
+      e.stopPropagation();
+      menu.hidden = true;
+      startTaskTabInlineRename(tab.id, title);
+    };
+
+    const deleteBtn = document.createElement("button");
+    deleteBtn.type = "button";
+    deleteBtn.className = "task-tab-item-menu-action danger";
+    deleteBtn.textContent = "Delete";
+    deleteBtn.onclick = (e) => {
+      e.stopPropagation();
+      menu.hidden = true;
+      deleteTaskTab(tab.id);
+    };
+
+    menu.appendChild(renameBtn);
+    menu.appendChild(deleteBtn);
+    actions.appendChild(menuBtn);
+    actions.appendChild(menu);
+
+    item.appendChild(title);
+    item.appendChild(actions);
+    taskTabList.appendChild(item);
+  });
+}
+
+function closeTaskTabMenus() {
+  document
+    .querySelectorAll(".task-tab-item-menu")
+    .forEach((menu) => (menu.hidden = true));
+  document
+    .querySelectorAll(".task-tab-item.menu-open")
+    .forEach((row) => row.classList.remove("menu-open"));
+}
+
+async function switchTaskTab(tabId) {
+  if (!tabId || currentTabId === tabId) return;
+  closeTaskTabMenus();
+  syncActiveTaskTabFromUi();
+  if (!currentProjectTabs.some((tab) => tab.id === tabId)) return;
+  currentTabId = tabId;
+  applyActiveTaskTabToUi();
+  await persistGoalToProject();
+}
+
+async function addTaskTab() {
+  syncActiveTaskTabFromUi();
+  const tab = createDefaultTaskTab("", []);
+  currentProjectTabs.push(tab);
+  currentTabId = tab.id;
+  applyActiveTaskTabToUi();
+  await persistGoalToProject();
+}
+
+async function renameTaskTab(tabId, nextName) {
+  const tab = currentProjectTabs.find((item) => item.id === tabId);
+  if (!tab) return;
+  const name = nextName.trim();
+  if (!name) return;
+  tab.name = name;
+  renderTaskTabs();
+  await persistGoalToProject();
+}
+
+function startTaskTabInlineRename(tabId, titleEl) {
+  const tab = currentProjectTabs.find((item) => item.id === tabId);
+  if (!tab || !titleEl || titleEl.tagName !== "SPAN") return;
+  closeTaskTabMenus();
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "task-tab-item-name-input";
+  input.value = tab.name || "New Task";
+  let committed = false;
+  const commit = async () => {
+    if (committed) return;
+    committed = true;
+    const next = input.value?.trim();
+    if (!next) {
+      renderTaskTabs();
+      return;
+    }
+    await renameTaskTab(tabId, next);
+  };
+  input.addEventListener("click", (e) => e.stopPropagation());
+  input.addEventListener("dblclick", (e) => e.stopPropagation());
+  input.addEventListener("keydown", async (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      await commit();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      renderTaskTabs();
+    }
+  });
+  input.addEventListener("blur", () => {
+    commit();
+  });
+  titleEl.replaceWith(input);
+  input.focus();
+  input.select();
+}
+
+async function deleteTaskTab(tabId) {
+  const index = currentProjectTabs.findIndex((tab) => tab.id === tabId);
+  if (index < 0) return;
+  const tabName = currentProjectTabs[index]?.name || "New Task";
+  if (!window.confirm(`Delete tab "${tabName}"?`)) return;
+  syncActiveTaskTabFromUi();
+  currentProjectTabs.splice(index, 1);
+  if (!currentProjectTabs.length) {
+    const fallback = createDefaultTaskTab("", []);
+    currentProjectTabs = [fallback];
+    currentTabId = fallback.id;
+  } else if (currentTabId === tabId) {
+    currentTabId =
+      currentProjectTabs[Math.max(0, index - 1)]?.id ||
+      currentProjectTabs[0].id;
+  }
+  applyActiveTaskTabToUi();
+  await persistGoalToProject();
+}
 
 async function init() {
   if (window.openBrowser) {
@@ -621,18 +926,22 @@ async function runPlan(plan) {
 
 function setupProjects() {
   btnSaveProject?.addEventListener("click", saveProject);
+  btnNewTaskTab?.addEventListener("click", addTaskTab);
+  document.addEventListener("click", () => {
+    closeTaskTabMenus();
+  });
   btnNewProject?.addEventListener("click", () => {
     currentProjectId = null;
-    goalInput.value = "";
-    projectNameInput.value = "";
+    if (goalInput) goalInput.value = "";
+    if (projectNameInput) projectNameInput.value = "";
     actionTrace = [];
     currentPlan = [];
+    currentProjectTabs = [];
+    currentTabId = null;
+    ensureTaskTabs("", []);
+    renderTaskTabs();
     setState("idle");
-    while (actionLog?.firstChild) actionLog.removeChild(actionLog.firstChild);
-    if (actionLogEmpty) {
-      actionLogEmpty.classList.remove("hidden");
-      actionLog.appendChild(actionLogEmpty);
-    }
+    renderActionLogEntries([]);
   });
 }
 
@@ -640,6 +949,13 @@ function setupProjects() {
 async function persistGoalToProject() {
   if (!currentProjectId) return;
   const goal = goalInput?.value?.trim() ?? "";
+  syncActiveTaskTabFromUi();
+  ensureTaskTabs(goal, actionTrace);
+  const activeTab = getActiveTaskTab() || currentProjectTabs[0];
+  if (activeTab) {
+    activeTab.prompt = goal;
+    activeTab.logs = normalizeTraceEntries(actionTrace);
+  }
   const name =
     projectNameInput?.value?.trim() || goal?.slice(0, 50) || "Untitled";
   const provider = aiProviderSelect?.value || "heuristic";
@@ -647,9 +963,11 @@ async function persistGoalToProject() {
     await window.openBrowser?.projectsSave?.({
       id: currentProjectId,
       name: name || "Untitled",
-      goal: goal || "",
+      goal: String(activeTab?.prompt || goal || ""),
       plan: currentPlan || [],
-      trace: actionTrace || [],
+      trace: normalizeTraceEntries(activeTab?.logs || actionTrace),
+      tabs: currentProjectTabs,
+      activeTabId: activeTab?.id || currentTabId,
       aiProvider: provider,
     });
   } catch (_) {}
@@ -657,45 +975,43 @@ async function persistGoalToProject() {
 
 async function saveProject() {
   const goal = goalInput?.value?.trim() ?? "";
-  const name = projectNameInput?.value?.trim() || goal || "Untitled";
-  if (!name && !goal) return;
+  syncActiveTaskTabFromUi();
+  ensureTaskTabs(goal, actionTrace);
+  const activeTab = getActiveTaskTab() || currentProjectTabs[0];
+  const activeGoal = String(activeTab?.prompt || goal || "");
+  const activeLogs = normalizeTraceEntries(activeTab?.logs || actionTrace);
+  const name = projectNameInput?.value?.trim() || activeGoal || "Untitled";
+  if (!name && !activeGoal) return;
   const provider = aiProviderSelect?.value || "heuristic";
   const isOnProjectsView = viewProjectDetail?.hidden === true;
   try {
     const project = await window.openBrowser?.projectsSave?.({
       id: currentProjectId || undefined,
-      name: name || goal?.slice(0, 50) || "Untitled",
-      goal: goal || name || "",
+      name: name || activeGoal?.slice(0, 50) || "Untitled",
+      goal: activeGoal || name || "",
       plan: currentPlan || [],
-      trace: actionTrace || [],
+      trace: activeLogs,
+      tabs: currentProjectTabs,
+      activeTabId: activeTab?.id || currentTabId,
       aiProvider: provider,
     });
     if (project) {
+      const normalized = normalizeProjectTabs(project);
       currentProjectId = project.id;
-      if (projectNameInput) projectNameInput.value = project.name;
-      if (projectDetailName) projectDetailName.textContent = project.name;
+      if (projectNameInput) projectNameInput.value = normalized.name;
+      if (projectDetailName) projectDetailName.textContent = normalized.name;
+      currentProjectTabs = normalized.tabs || [];
+      currentTabId =
+        normalized.activeTabId || currentProjectTabs[0]?.id || null;
+      currentPlan = normalized.plan || [];
       await refreshProjectList();
       if (isOnProjectsView) {
-        if (goalInput) goalInput.value = project.goal || "";
-        actionTrace = project.trace || [];
-        currentPlan = project.plan || [];
-        while (actionLog?.firstChild)
-          actionLog.removeChild(actionLog.firstChild);
-        if (actionTrace?.length) {
-          actionTrace.forEach((t) => {
-            const el = document.createElement("div");
-            el.className = "action-log-entry " + (t.kind || "info");
-            el.textContent = t.time + " " + t.msg;
-            actionLog.appendChild(el);
-          });
-          actionLogEmpty?.classList.add("hidden");
-        } else if (actionLogEmpty) {
-          actionLog.appendChild(actionLogEmpty);
-          actionLogEmpty.classList.remove("hidden");
-        }
+        applyActiveTaskTabToUi();
         showProjectDetailView();
       } else {
-        logAction({ message: `Saved: ${project.name}` }, "success");
+        logAction({ message: `Saved: ${normalized.name}` }, "success");
+        syncActiveTaskTabFromUi();
+        renderTaskTabs();
       }
     } else {
       logAction({ error: "Save failed (no response)" }, "error");
@@ -708,21 +1024,16 @@ async function saveProject() {
 async function loadProject(id) {
   const p = await window.openBrowser?.projectsLoad?.(id);
   if (!p) return;
-  currentProjectId = p.id;
-  if (projectNameInput) projectNameInput.value = p.name || "";
-  goalInput.value = p.goal || "";
-  actionTrace = p.trace || [];
-  currentPlan = p.plan || [];
-  while (actionLog?.firstChild) actionLog.removeChild(actionLog.firstChild);
-  (p.trace || []).forEach((t) => {
-    const el = document.createElement("div");
-    el.className = "action-log-entry " + (t.kind || "info");
-    el.textContent = t.time + " " + t.msg;
-    actionLog.appendChild(el);
-  });
-  actionLogEmpty?.classList.add("hidden");
+  const normalized = normalizeProjectTabs(p);
+  currentProjectId = normalized.id;
+  if (projectNameInput) projectNameInput.value = normalized.name || "";
+  currentProjectTabs = normalized.tabs || [];
+  currentTabId = normalized.activeTabId || currentProjectTabs[0]?.id || null;
+  currentPlan = normalized.plan || [];
+  applyActiveTaskTabToUi();
   setState("idle");
-  if (projectDetailName) projectDetailName.textContent = p.name || "Project";
+  if (projectDetailName)
+    projectDetailName.textContent = normalized.name || "Project";
   showProjectDetailView();
 }
 
@@ -957,6 +1268,7 @@ function logAction(result, kind = "info") {
   el.textContent = time + " " + msg;
   actionLog.appendChild(el);
   actionLog.scrollTop = actionLog.scrollHeight;
+  syncActiveTaskTabFromUi();
 }
 
 init();
