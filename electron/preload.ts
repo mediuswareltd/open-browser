@@ -32,6 +32,13 @@ contextBridge.exposeInMainWorld("openBrowser", {
     ipcRenderer.invoke("plan", goal, provider, apiKeyOverride),
   executeActionInBrowser: (action: Record<string, unknown>) =>
     ipcRenderer.invoke("browser-execute-action", action),
+  getProfiles: () => ipcRenderer.invoke("profiles-get"),
+  createProfile: (name?: string) => ipcRenderer.invoke("profiles-create", name),
+  renameProfile: (id: string, name: string) =>
+    ipcRenderer.invoke("profiles-rename", id, name),
+  deleteProfile: (id: string) => ipcRenderer.invoke("profiles-delete", id),
+  setActiveProfile: (id: string) =>
+    ipcRenderer.invoke("profiles-set-active", id),
   projectsList: () => ipcRenderer.invoke("projects-list"),
   projectsSave: (data: unknown) => ipcRenderer.invoke("projects-save", data),
   projectsLoad: (id: string) => ipcRenderer.invoke("projects-load", id),
