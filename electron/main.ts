@@ -372,7 +372,8 @@ async function loadExtensionForPartition(partition: string) {
       allowFileAccess: true,
     });
     extensionLoadedPartitions.add(partition);
-    console.log("[OpenBrowser] Extension loaded:", ext.id, ext.name);
+    // console.log("[OpenBrowser] Extension loaded:", ext.id, ext.name);
+    console.log("[OpenBrowser] Extension loaded:", ext.name);
     return true;
   } catch (err) {
     const msg = String((err as Error)?.message || err || "");
