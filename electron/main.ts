@@ -14,6 +14,9 @@ import { getAiConfig, type AiProvider } from "./config";
 import { planWithGemini } from "./gemini-planner";
 import { planWithOllama } from "./ollama-planner";
 import { executeInPage } from "./browser-executor";
+import { Executor } from "../runtime/executor";
+import type { BrowserAction } from "../shared/schemas";
+import type { TraceEntry } from "../shared/types";
 import {
   listProjects,
   saveProject,
@@ -45,6 +48,14 @@ let profiles: StoredProfile[] = [
   { id: DEFAULT_PROFILE_ID, name: DEFAULT_PROFILE_NAME },
 ];
 let activeProfileId = DEFAULT_PROFILE_ID;
+const pendingApprovals = new Map<
+  string,
+  {
+    senderId: number;
+    resolve: (approved: boolean) => void;
+    timeout: NodeJS.Timeout;
+  }
+>();
 
 interface StoredAiConfig {
   aiProvider: AiProvider;
@@ -500,6 +511,111 @@ function clearAiConfigAndReset() {
   return { ok: true };
 }
 
+function sendExecutorState(sender: Electron.WebContents, state: string) {
+  sender.send("executor-state", state);
+}
+
+function sendExecutorTrace(sender: Electron.WebContents, entry: TraceEntry) {
+  sender.send("executor-trace", entry);
+}
+
+async function requestExecutorApproval(
+  sender: Electron.WebContents,
+  action: BrowserAction,
+) {
+  const requestId = `approval-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  sender.send("executor-approval-required", { requestId, action });
+
+  return await new Promise<boolean>((resolve) => {
+    const timeout = setTimeout(() => {
+      pendingApprovals.delete(requestId);
+      resolve(false);
+    }, 120000);
+
+    pendingApprovals.set(requestId, {
+      senderId: sender.id,
+      timeout,
+      resolve: (approved: boolean) => {
+        clearTimeout(timeout);
+        resolve(approved);
+      },
+    });
+  });
+}
+
+type ExecutionPlanStep = {
+  action: BrowserAction;
+  requiresApproval?: boolean;
+};
+
+async function runExecutionPlan(
+  sender: Electron.WebContents,
+  goal: string,
+  plan: ExecutionPlanStep[],
+) {
+  if (!browserView?.webContents) {
+    return { ok: false, error: "No browser view", state: "failed", trace: [] };
+  }
+
+  const executor = new Executor({
+    onStateChange: (state) => sendExecutorState(sender, state),
+    onTrace: (entry) => sendExecutorTrace(sender, entry),
+    onApprovalRequired: async (action, resolve) => {
+      const approved = await requestExecutorApproval(sender, action);
+      resolve(approved);
+    },
+    executeAction: async (action) => {
+      if (!browserView?.webContents) {
+        return {
+          actionId: action.id,
+          success: false,
+          error: "No browser view",
+        };
+      }
+      if (action.type === "navigate") {
+        try {
+          await browserView.webContents.loadURL(action.url);
+          return { actionId: action.id, success: true };
+        } catch (err) {
+          return {
+            actionId: action.id,
+            success: false,
+            error: String((err as Error)?.message || err),
+          };
+        }
+      }
+      const result = await executeInPage(browserView.webContents, action);
+      return {
+        actionId: action.id,
+        success: Boolean(result.success),
+        error: result.error,
+      };
+    },
+  });
+
+  try {
+    await executor.run(goal, plan);
+    return {
+      ok: true,
+      state: executor.getState(),
+      trace: executor.getTrace(),
+    };
+  } catch (err) {
+    sendExecutorState(sender, "failed");
+    sendExecutorTrace(sender, {
+      timestamp: Date.now(),
+      state: "failed",
+      message: `Execution failed: ${String((err as Error)?.message || err)}`,
+    });
+    return {
+      ok: false,
+      error: String((err as Error)?.message || err),
+      state: "failed",
+      trace: executor.getTrace(),
+    };
+  }
+}
+
 function setupIPC() {
   if (ipcInitialized) return;
   ipcInitialized = true;
@@ -563,6 +679,28 @@ function setupIPC() {
       },
     );
   });
+  ipcMain.handle(
+    "executor-approval-response",
+    (e, requestId: string, approved: boolean) => {
+      const key = String(requestId || "").trim();
+      if (!key) return { ok: false, error: "Missing request id" };
+      const pending = pendingApprovals.get(key);
+      if (!pending) return { ok: false, error: "Approval request not found" };
+      if (pending.senderId !== e.sender.id) {
+        return { ok: false, error: "Approval sender mismatch" };
+      }
+      pendingApprovals.delete(key);
+      clearTimeout(pending.timeout);
+      pending.resolve(Boolean(approved));
+      return { ok: true };
+    },
+  );
+  ipcMain.handle(
+    "executor-run",
+    async (_e, goal: string, plan: ExecutionPlanStep[] = []) => {
+      return runExecutionPlan(_e.sender, String(goal || ""), plan || []);
+    },
+  );
   ipcMain.handle("get-ai-config", () => runtimeAiConfig);
   ipcMain.handle("projects-list", () => listProjects(userDataPath));
   ipcMain.handle("projects-save", (_e, data: unknown) => {

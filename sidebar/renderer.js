@@ -74,7 +74,7 @@ const SIDEBAR_WIDTH_COLLAPSED = 52;
 
 let bridgePort = 0;
 let extensionSocket = null;
-let pendingApproval = null;
+let pendingApprovalRequestId = null;
 let currentProjectId = null;
 let currentPlan = [];
 let actionTrace = [];
@@ -83,6 +83,7 @@ let currentTabId = null;
 let currentAiModel = "gemini-2.5-flash";
 let aiProviderSelectBound = false;
 let profileState = { profiles: [], activeProfileId: "default" };
+let executorBridgeBound = false;
 
 function createTaskTabId() {
   return `t-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -402,6 +403,7 @@ async function init() {
   if (!bridgePort) bridgePort = 9333;
   connectToBridge();
   setupBrowser();
+  setupExecutorBridge();
   setupProjects();
   setupWelcome();
   setupSidebarToggle();
@@ -1013,6 +1015,88 @@ function navigateBrowser(url) {
   }
 }
 
+function requestApprovalFromUser(action) {
+  if (!approvalSection || !btnApprove || !btnReject)
+    return Promise.resolve(false);
+  approvalSection.hidden = false;
+  if (approvalMessage) {
+    approvalMessage.textContent = `Approve: ${action?.type || "action"} on "${action?.selector || action?.url || "element"}"?`;
+  }
+  return new Promise((resolve) => {
+    btnApprove.onclick = () => {
+      approvalSection.hidden = true;
+      btnApprove.onclick = null;
+      btnReject.onclick = null;
+      resolve(true);
+    };
+    btnReject.onclick = () => {
+      approvalSection.hidden = true;
+      btnApprove.onclick = null;
+      btnReject.onclick = null;
+      resolve(false);
+    };
+  });
+}
+
+function logExecutorTrace(entry) {
+  if (!entry || typeof entry !== "object") return;
+  const result = entry.result;
+  if (result && typeof result === "object") {
+    const success = Boolean(result.success);
+    logAction(
+      {
+        actionId: result.actionId || entry?.action?.id,
+        success,
+        error: result.error,
+      },
+      success ? "success" : "error",
+    );
+    return;
+  }
+  if (entry.message) {
+    const kind =
+      entry.state === "failed" || entry.state === "recovering"
+        ? "error"
+        : "info";
+    logAction({ message: String(entry.message) }, kind);
+  }
+}
+
+function setupExecutorBridge() {
+  if (executorBridgeBound || !window.openBrowser) return;
+
+  window.openBrowser.onExecutorState?.((state) => {
+    setState(state);
+    if (state === "completed" || state === "failed") {
+      persistGoalToProject();
+    }
+  });
+
+  window.openBrowser.onExecutorTrace?.((entry) => {
+    logExecutorTrace(entry);
+  });
+
+  window.openBrowser.onExecutorApprovalRequired?.(async (payload) => {
+    const requestId = String(payload?.requestId || "");
+    const action = payload?.action || {};
+    pendingApprovalRequestId = requestId || null;
+    const approved = await requestApprovalFromUser(action);
+    const activeRequestId = pendingApprovalRequestId;
+    pendingApprovalRequestId = null;
+    if (activeRequestId && window.openBrowser?.respondToExecutorApproval) {
+      await window.openBrowser.respondToExecutorApproval(
+        activeRequestId,
+        approved,
+      );
+    }
+    if (!approved) {
+      logAction({ actionId: action?.id, error: "Rejected by user" }, "error");
+    }
+  });
+
+  executorBridgeBound = true;
+}
+
 btnGo.addEventListener("click", () => {
   let url = urlBar.value.trim();
   if (!url.startsWith("http"))
@@ -1050,69 +1134,16 @@ btnExecute.addEventListener("click", async () => {
   }
   currentPlan = plan;
   await persistGoalToProject();
-  setState("executing");
 
   try {
-    for (let i = 0; i < plan.length; i++) {
-      const step = plan[i];
-      if (i > 0 && plan[i - 1].action.type === "navigate") {
-        await new Promise((r) => setTimeout(r, 2000));
-      }
-      if (step.requiresApproval) {
-        setState("waiting_approval");
-        pendingApproval = step;
-        if (approvalSection) approvalSection.hidden = false;
-        if (approvalMessage)
-          approvalMessage.textContent = `Approve: ${step.action.type} on "${step.action.selector || step.action.url || "element"}"?`;
-        const approved = await new Promise((resolve) => {
-          btnApprove.onclick = () => {
-            approvalSection.hidden = true;
-            pendingApproval = null;
-            resolve(true);
-          };
-          btnReject.onclick = () => {
-            approvalSection.hidden = true;
-            pendingApproval = null;
-            logAction(
-              { actionId: step.action.id, error: "Rejected by user" },
-              "error",
-            );
-            resolve(false);
-          };
-        });
-        if (!approved) continue;
-      }
-
-      if (step.action.type === "navigate") {
-        navigateBrowser(step.action.url);
-        logAction({ actionId: step.action.id, success: true }, "success");
-      } else if (window.openBrowser?.executeActionInBrowser) {
-        const result = await window.openBrowser.executeActionInBrowser(
-          step.action,
-        );
-        logAction(
-          {
-            actionId: step.action.id,
-            success: result?.success,
-            error: result?.error,
-          },
-          result?.success ? "success" : "error",
-        );
-      } else if (
-        extensionSocket &&
-        extensionSocket.readyState === WebSocket.OPEN
-      ) {
-        extensionSocket.send(
-          JSON.stringify({ type: "action", payload: step.action }),
-        );
-      } else {
-        logAction(
-          { actionId: step.action.id, error: "Cannot execute action" },
-          "error",
-        );
-      }
+    if (!window.openBrowser?.runExecutionPlan) {
+      throw new Error("Executor runtime is unavailable");
     }
-    setState("completed");
+    const runResult = await window.openBrowser.runExecutionPlan(goal, plan);
+    if (!runResult?.ok) {
+      logAction({ error: runResult?.error || "Execution failed" }, "error");
+      setState("failed");
+    }
     await persistGoalToProject();
   } catch (err) {
     logAction({ error: "Run failed: " + (err?.message || err) }, "error");
@@ -1120,50 +1151,6 @@ btnExecute.addEventListener("click", async () => {
     await persistGoalToProject();
   }
 });
-
-async function runPlan(plan) {
-  setState("executing");
-  for (let i = 0; i < plan.length; i++) {
-    const step = plan[i];
-    if (i > 0 && plan[i - 1].action.type === "navigate") {
-      await new Promise((r) => setTimeout(r, 2000));
-    }
-    if (step.requiresApproval) {
-      setState("waiting_approval");
-      approvalSection.hidden = false;
-      approvalMessage.textContent = `Approve: ${step.action.type} on "${step.action.selector || step.action.url || "element"}"?`;
-      const approved = await new Promise((resolve) => {
-        btnApprove.onclick = () => {
-          approvalSection.hidden = true;
-          resolve(true);
-        };
-        btnReject.onclick = () => {
-          approvalSection.hidden = true;
-          logAction({ actionId: step.action.id, error: "Rejected" }, "error");
-          resolve(false);
-        };
-      });
-      if (!approved) continue;
-    }
-    if (step.action.type === "navigate") {
-      navigateBrowser(step.action.url);
-      logAction({ actionId: step.action.id, success: true }, "success");
-    } else if (window.openBrowser?.executeActionInBrowser) {
-      const result = await window.openBrowser.executeActionInBrowser(
-        step.action,
-      );
-      logAction(
-        {
-          actionId: step.action.id,
-          success: result?.success,
-          error: result?.error,
-        },
-        result?.success ? "success" : "error",
-      );
-    }
-  }
-  setState("completed");
-}
 
 function setupProjects() {
   btnSaveProject?.addEventListener("click", saveProject);

@@ -32,6 +32,35 @@ contextBridge.exposeInMainWorld("openBrowser", {
     ipcRenderer.invoke("plan", goal, provider, apiKeyOverride),
   executeActionInBrowser: (action: Record<string, unknown>) =>
     ipcRenderer.invoke("browser-execute-action", action),
+  runExecutionPlan: (
+    goal: string,
+    plan: Array<{
+      action: Record<string, unknown>;
+      requiresApproval?: boolean;
+    }>,
+  ) => ipcRenderer.invoke("executor-run", goal, plan),
+  respondToExecutorApproval: (requestId: string, approved: boolean) =>
+    ipcRenderer.invoke("executor-approval-response", requestId, approved),
+  onExecutorState: (cb: (state: string) => void) => {
+    ipcRenderer.on("executor-state", (_e, state: string) => cb(state));
+  },
+  onExecutorTrace: (cb: (entry: Record<string, unknown>) => void) => {
+    ipcRenderer.on("executor-trace", (_e, entry: Record<string, unknown>) =>
+      cb(entry),
+    );
+  },
+  onExecutorApprovalRequired: (
+    cb: (payload: {
+      requestId: string;
+      action: Record<string, unknown>;
+    }) => void,
+  ) => {
+    ipcRenderer.on(
+      "executor-approval-required",
+      (_e, payload: { requestId: string; action: Record<string, unknown> }) =>
+        cb(payload),
+    );
+  },
   getProfiles: () => ipcRenderer.invoke("profiles-get"),
   createProfile: (name?: string) => ipcRenderer.invoke("profiles-create", name),
   renameProfile: (id: string, name: string) =>

@@ -13,6 +13,6 @@
     "declaration": true,
     "declarationMap": true
   },
-  "include": ["electron/**/*", "shared/**/*"],
+  "include": ["electron/**/*", "runtime/**/*", "shared/**/*"],
   "exclude": ["node_modules"]
 }
