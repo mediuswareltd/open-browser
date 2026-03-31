@@ -64,6 +64,7 @@ export class Executor {
   ) {
     this.setState("executing");
     this.log(`Started goal: ${goal}`);
+    let hasFailure = false;
 
     for (const step of plan) {
       if (step.requiresApproval && this.callbacks.onApprovalRequired) {
@@ -99,10 +100,12 @@ export class Executor {
       if (!result.success) {
         this.log(`Action failed: ${result.error}`, { result });
         this.setState("recovering");
+        hasFailure = true;
+        this.setState("executing");
       }
     }
 
-    this.setState("completed");
+    this.setState(hasFailure ? "failed" : "completed");
   }
 }
 

@@ -15,6 +15,9 @@ const approvalSection = document.getElementById("approval-section");
 const approvalMessage = document.getElementById("approval-message");
 const btnApprove = document.getElementById("btn-approve");
 const btnReject = document.getElementById("btn-reject");
+const structuredStepsEl = document.getElementById("structured-steps");
+const structuredStepsEmpty = document.getElementById("structured-steps-empty");
+const resultSummaryEl = document.getElementById("result-summary");
 const urlBar = document.getElementById("url-bar");
 const btnGo = document.getElementById("btn-go");
 const projectNameInput = document.getElementById("project-name-input");
@@ -84,9 +87,326 @@ let currentAiModel = "gemini-2.5-flash";
 let aiProviderSelectBound = false;
 let profileState = { profiles: [], activeProfileId: "default" };
 let executorBridgeBound = false;
+let currentStructuredRun = null;
 
 function createTaskTabId() {
   return `t-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function createRunId() {
+  return `r-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function createActionId() {
+  return `a-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function ensurePlanStepActionIds(plan = []) {
+  if (!Array.isArray(plan)) return [];
+  return plan.map((step) => {
+    const action =
+      step?.action && typeof step.action === "object" ? { ...step.action } : {};
+    if (!String(action?.id || "").trim()) {
+      action.id = createActionId();
+    }
+    return {
+      ...step,
+      action,
+    };
+  });
+}
+
+function normalizeStepStatus(status) {
+  if (
+    status === "pending" ||
+    status === "running" ||
+    status === "done" ||
+    status === "failed"
+  ) {
+    return status;
+  }
+  return "pending";
+}
+
+function normalizeStructuredStep(step = {}, fallbackTitle = "Step") {
+  return {
+    id:
+      String(step?.id || "").trim() ||
+      `s-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    title: String(step?.title || fallbackTitle).trim() || fallbackTitle,
+    status: normalizeStepStatus(step?.status),
+    startedAt:
+      typeof step?.startedAt === "number" ? Number(step.startedAt) : undefined,
+    completedAt:
+      typeof step?.completedAt === "number"
+        ? Number(step.completedAt)
+        : undefined,
+    error: step?.error ? String(step.error) : undefined,
+    actionId: step?.actionId ? String(step.actionId) : undefined,
+    isAction: Boolean(step?.isAction),
+  };
+}
+
+function normalizeStructuredRun(run) {
+  if (!run || typeof run !== "object") return null;
+  const steps = Array.isArray(run.steps)
+    ? run.steps.map((step, idx) =>
+        normalizeStructuredStep(step, `Step ${idx + 1}`),
+      )
+    : [];
+  return {
+    id: String(run.id || createRunId()),
+    prompt: String(run.prompt || ""),
+    createdAt:
+      typeof run.createdAt === "number" ? Number(run.createdAt) : Date.now(),
+    steps,
+    logs: normalizeTraceEntries(run.logs),
+    result:
+      run.result && typeof run.result === "object"
+        ? {
+            status: String(run.result.status || "pending"),
+            message: String(run.result.message || ""),
+          }
+        : { status: "pending", message: "" },
+  };
+}
+
+function actionLabel(action = {}) {
+  const type = String(action?.type || "action");
+  if (type === "navigate")
+    return `Open ${String(action?.url || "target page")}`;
+  if (type === "fill" || type === "type")
+    return `Fill ${String(action?.selector || "input field")}`;
+  if (type === "click")
+    return `Click ${String(action?.selector || "target element")}`;
+  if (type === "select")
+    return `Select ${String(action?.selector || "dropdown option")}`;
+  if (type === "scroll") return `Scroll ${String(action?.direction || "page")}`;
+  if (type === "screenshot") return "Capture screenshot";
+  return `Run ${type}`;
+}
+
+function createStructuredSteps(goal, plan = []) {
+  const runId = createRunId();
+  const steps = [
+    {
+      id: `${runId}-interpret`,
+      title: "Interpret prompt",
+      status: "running",
+      startedAt: Date.now(),
+    },
+  ];
+  plan.forEach((step, idx) => {
+    const action = step?.action || {};
+    steps.push({
+      id: `${runId}-action-${idx + 1}`,
+      title: actionLabel(action),
+      status: "pending",
+      actionId: String(action?.id || ""),
+      isAction: true,
+    });
+  });
+  steps.push({
+    id: `${runId}-finalize`,
+    title: "Finalize run",
+    status: "pending",
+  });
+  return {
+    id: runId,
+    prompt: String(goal || ""),
+    createdAt: Date.now(),
+    steps: steps.map((step, idx) =>
+      normalizeStructuredStep(step, `Step ${idx + 1}`),
+    ),
+    logs: normalizeTraceEntries(actionTrace),
+    result: { status: "running", message: "Execution started" },
+  };
+}
+
+function getActionStepIndexForStart(steps = [], actionId = "") {
+  if (actionId) {
+    const byId = steps.findIndex(
+      (step) => step.isAction && step.actionId === actionId,
+    );
+    if (byId >= 0) return byId;
+  }
+  const running = steps.findIndex(
+    (step) => step.isAction && step.status === "running",
+  );
+  if (running >= 0) return running;
+  return steps.findIndex((step) => step.isAction && step.status === "pending");
+}
+
+function getActionStepIndexForResult(steps = [], actionId = "") {
+  if (actionId) {
+    const byId = steps.findIndex(
+      (step) => step.isAction && step.actionId === actionId,
+    );
+    if (byId >= 0) return byId;
+  }
+  const running = steps.findIndex(
+    (step) => step.isAction && step.status === "running",
+  );
+  if (running >= 0) return running;
+  return steps.findIndex(
+    (step) =>
+      step.isAction && (step.status === "pending" || step.status === "running"),
+  );
+}
+
+function updateCurrentRun(mutator) {
+  if (!currentStructuredRun) return;
+  const next = normalizeStructuredRun(mutator({ ...currentStructuredRun }));
+  currentStructuredRun = next;
+  syncActiveTaskTabFromUi();
+  renderStructuredRun();
+}
+
+function markActionStepRunning(actionId) {
+  updateCurrentRun((run) => {
+    const steps = run.steps.map((step) => ({ ...step }));
+    const interpret = steps[0];
+    if (interpret && interpret.status === "running") {
+      interpret.status = "done";
+      interpret.completedAt = Date.now();
+    }
+    const idx = getActionStepIndexForStart(steps, String(actionId || ""));
+    if (idx >= 0) {
+      steps[idx].status = "running";
+      steps[idx].startedAt = steps[idx].startedAt || Date.now();
+    }
+    run.steps = steps;
+    return run;
+  });
+}
+
+function markActionStepResult(actionId, success, errorMessage = "") {
+  updateCurrentRun((run) => {
+    const steps = run.steps.map((step) => ({ ...step }));
+    const idx = getActionStepIndexForResult(steps, String(actionId || ""));
+    if (idx >= 0) {
+      steps[idx].status = success ? "done" : "failed";
+      steps[idx].completedAt = Date.now();
+      steps[idx].error = success
+        ? undefined
+        : String(errorMessage || "Action failed");
+    }
+    if (!success) {
+      const finalize = steps[steps.length - 1];
+      if (finalize && !finalize.actionId) {
+        finalize.status = "failed";
+        finalize.startedAt = finalize.startedAt || Date.now();
+        finalize.completedAt = Date.now();
+        finalize.error = String(errorMessage || "Run failed");
+      }
+      run.result = {
+        status: "failed",
+        message: String(errorMessage || "Execution failed"),
+      };
+    }
+    run.steps = steps;
+    return run;
+  });
+}
+
+function applyTerminalStateToRun(state) {
+  if (!currentStructuredRun) return;
+  updateCurrentRun((run) => {
+    const steps = run.steps.map((step) => ({ ...step }));
+    const interpret = steps[0];
+    if (interpret && interpret.status === "running") {
+      interpret.status = state === "failed" ? "failed" : "done";
+      interpret.completedAt = Date.now();
+      if (state === "failed") interpret.error = interpret.error || "Run failed";
+    }
+    const finalize = steps[steps.length - 1];
+    if (finalize && !finalize.actionId) {
+      finalize.startedAt = finalize.startedAt || Date.now();
+      finalize.completedAt = Date.now();
+      if (state === "completed") {
+        finalize.status = "done";
+        finalize.error = undefined;
+      } else if (state === "failed") {
+        finalize.status = "failed";
+        finalize.error = finalize.error || "Run failed";
+      }
+    }
+    run.steps = steps;
+    if (state === "completed") {
+      const hasFailedStep = steps.some((step) => step.status === "failed");
+      run.result = hasFailedStep
+        ? { status: "failed", message: "Execution completed with failures" }
+        : {
+            status: "done",
+            message:
+              "Execution finished (action-level success, goal not verified)",
+          };
+    } else if (state === "failed") {
+      run.result = {
+        status: "failed",
+        message:
+          run.result?.message && run.result.message !== "Execution started"
+            ? run.result.message
+            : "Execution failed",
+      };
+    }
+    return run;
+  });
+}
+
+function renderStructuredSteps(run) {
+  if (!structuredStepsEl) return;
+  while (structuredStepsEl.firstChild)
+    structuredStepsEl.removeChild(structuredStepsEl.firstChild);
+  const steps = Array.isArray(run?.steps) ? run.steps : [];
+  if (!steps.length) {
+    if (structuredStepsEmpty) {
+      structuredStepsEmpty.classList.remove("hidden");
+      structuredStepsEl.appendChild(structuredStepsEmpty);
+    }
+    return;
+  }
+  if (structuredStepsEmpty) structuredStepsEmpty.classList.add("hidden");
+  steps.forEach((step) => {
+    const row = document.createElement("div");
+    row.className = `structured-step-row ${normalizeStepStatus(step?.status)}`;
+    const dot = document.createElement("span");
+    dot.className = "structured-step-dot";
+    const title = document.createElement("span");
+    title.className = "structured-step-title";
+    title.textContent = step?.error
+      ? `${step.title} (${step.error})`
+      : step.title;
+    row.appendChild(dot);
+    row.appendChild(title);
+    structuredStepsEl.appendChild(row);
+  });
+}
+
+function renderResultSummary(run) {
+  if (!resultSummaryEl) return;
+  if (!run) {
+    resultSummaryEl.textContent = "No result yet.";
+    resultSummaryEl.className = "result-summary";
+    return;
+  }
+  const status = String(run?.result?.status || "pending");
+  const message =
+    String(run?.result?.message || "").trim() ||
+    (status === "failed"
+      ? "Execution failed."
+      : status === "done"
+        ? "Execution completed."
+        : "Run in progress.");
+  resultSummaryEl.textContent = message;
+  resultSummaryEl.className =
+    "result-summary" +
+    (status === "failed" ? " failed" : status === "done" ? " success" : "");
+}
+
+function renderStructuredRun() {
+  renderStructuredSteps(currentStructuredRun);
+  renderResultSummary(currentStructuredRun);
 }
 
 function normalizeTraceEntries(entries) {
@@ -118,6 +438,7 @@ function createDefaultTaskTab(prompt = "", logs = []) {
     name: getNextTaskTabName(),
     prompt: String(prompt || ""),
     logs: normalizeTraceEntries(logs),
+    latestRun: null,
   };
 }
 
@@ -132,6 +453,7 @@ function normalizeProjectTabs(project = {}) {
           `New Task ${idx + 1}`,
         prompt: String(tab?.prompt || ""),
         logs: normalizeTraceEntries(tab?.logs),
+        latestRun: normalizeStructuredRun(tab?.latestRun),
       }))
     : [];
   if (!tabs.length) {
@@ -141,6 +463,7 @@ function normalizeProjectTabs(project = {}) {
         name: "New Task",
         prompt: legacyGoal,
         logs: legacyTrace,
+        latestRun: null,
       },
     ];
   }
@@ -183,6 +506,7 @@ function syncActiveTaskTabFromUi() {
   if (!activeTab) return;
   activeTab.prompt = String(goalInput?.value || "");
   activeTab.logs = normalizeTraceEntries(actionTrace);
+  activeTab.latestRun = normalizeStructuredRun(currentStructuredRun);
 }
 
 function renderActionLogEntries(entries = []) {
@@ -210,7 +534,9 @@ function applyActiveTaskTabToUi() {
   if (!activeTab) return;
   if (goalInput) goalInput.value = String(activeTab.prompt || "");
   actionTrace = normalizeTraceEntries(activeTab.logs);
+  currentStructuredRun = normalizeStructuredRun(activeTab.latestRun);
   renderActionLogEntries(actionTrace);
+  renderStructuredRun();
   renderTaskTabs();
 }
 
@@ -413,6 +739,7 @@ async function init() {
   setupSettingsMenu();
   setupKeyboardShortcuts();
   refreshProjectList();
+  renderStructuredRun();
   if (localStorage.getItem(WELCOME_DISMISSED_KEY))
     welcomeBlock?.classList.add("hidden");
   const collapsed = localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1";
@@ -1040,9 +1367,17 @@ function requestApprovalFromUser(action) {
 
 function logExecutorTrace(entry) {
   if (!entry || typeof entry !== "object") return;
+  if (entry?.action?.id && !entry.result) {
+    markActionStepRunning(String(entry.action.id));
+  }
   const result = entry.result;
   if (result && typeof result === "object") {
     const success = Boolean(result.success);
+    markActionStepResult(
+      String(result.actionId || entry?.action?.id || ""),
+      success,
+      String(result.error || ""),
+    );
     logAction(
       {
         actionId: result.actionId || entry?.action?.id,
@@ -1068,6 +1403,9 @@ function setupExecutorBridge() {
   window.openBrowser.onExecutorState?.((state) => {
     setState(state);
     if (state === "completed" || state === "failed") {
+      applyTerminalStateToRun(state);
+    }
+    if (state === "completed" || state === "failed") {
       persistGoalToProject();
     }
   });
@@ -1091,6 +1429,7 @@ function setupExecutorBridge() {
     }
     if (!approved) {
       logAction({ actionId: action?.id, error: "Rejected by user" }, "error");
+      markActionStepResult(String(action?.id || ""), false, "Rejected by user");
     }
   });
 
@@ -1132,7 +1471,10 @@ btnExecute.addEventListener("click", async () => {
     plan = planFromGoal(goal);
     logAction({ message: "Plan from heuristics" }, "info");
   }
+  plan = ensurePlanStepActionIds(plan);
   currentPlan = plan;
+  currentStructuredRun = createStructuredSteps(goal, plan);
+  renderStructuredRun();
   await persistGoalToProject();
 
   try {
@@ -1141,11 +1483,25 @@ btnExecute.addEventListener("click", async () => {
     }
     const runResult = await window.openBrowser.runExecutionPlan(goal, plan);
     if (!runResult?.ok) {
+      updateCurrentRun((run) => {
+        run.result = {
+          status: "failed",
+          message: String(runResult?.error || "Execution failed"),
+        };
+        return run;
+      });
       logAction({ error: runResult?.error || "Execution failed" }, "error");
       setState("failed");
     }
     await persistGoalToProject();
   } catch (err) {
+    updateCurrentRun((run) => {
+      run.result = {
+        status: "failed",
+        message: "Run failed: " + String(err?.message || err),
+      };
+      return run;
+    });
     logAction({ error: "Run failed: " + (err?.message || err) }, "error");
     setState("failed");
     await persistGoalToProject();
@@ -1164,12 +1520,14 @@ function setupProjects() {
     if (projectNameInput) projectNameInput.value = "";
     actionTrace = [];
     currentPlan = [];
+    currentStructuredRun = null;
     currentProjectTabs = [];
     currentTabId = null;
     ensureTaskTabs("", []);
     renderTaskTabs();
     setState("idle");
     renderActionLogEntries([]);
+    renderStructuredRun();
   });
 }
 
@@ -1491,6 +1849,9 @@ function logAction(result, kind = "info") {
     `${result.action?.type || "?"} ${result.success !== undefined ? (result.success ? "ok" : "failed") : ""}`;
   const time = new Date().toLocaleTimeString();
   actionTrace.push({ time, msg, kind });
+  if (currentStructuredRun) {
+    currentStructuredRun.logs = normalizeTraceEntries(actionTrace);
+  }
   const el = document.createElement("div");
   el.className = "action-log-entry " + kind;
   el.textContent = time + " " + msg;

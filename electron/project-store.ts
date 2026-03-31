@@ -12,11 +12,34 @@ export interface SavedTraceEntry {
   kind: string;
 }
 
+export interface SavedStructuredStep {
+  id: string;
+  title: string;
+  status: "pending" | "running" | "done" | "failed";
+  startedAt?: number;
+  completedAt?: number;
+  error?: string;
+  actionId?: string;
+}
+
+export interface SavedStructuredRun {
+  id: string;
+  prompt: string;
+  createdAt: number;
+  steps: SavedStructuredStep[];
+  logs: SavedTraceEntry[];
+  result: {
+    status: string;
+    message: string;
+  };
+}
+
 export interface SavedTab {
   id: string;
   name: string;
   prompt: string;
   logs: SavedTraceEntry[];
+  latestRun?: SavedStructuredRun | null;
 }
 
 export interface SavedProject {
@@ -45,6 +68,72 @@ function normalizeTrace(trace: unknown): SavedTraceEntry[] {
   }));
 }
 
+function normalizeStepStatus(value: unknown): SavedStructuredStep["status"] {
+  if (
+    value === "pending" ||
+    value === "running" ||
+    value === "done" ||
+    value === "failed"
+  ) {
+    return value;
+  }
+  return "pending";
+}
+
+function normalizeStructuredRun(run: unknown): SavedStructuredRun | null {
+  if (!run || typeof run !== "object") return null;
+  const raw = run as {
+    id?: unknown;
+    prompt?: unknown;
+    createdAt?: unknown;
+    steps?: unknown;
+    logs?: unknown;
+    result?: unknown;
+  };
+  const steps = Array.isArray(raw.steps)
+    ? raw.steps.map((step, idx) => {
+        const s = (step || {}) as {
+          id?: unknown;
+          title?: unknown;
+          status?: unknown;
+          startedAt?: unknown;
+          completedAt?: unknown;
+          error?: unknown;
+          actionId?: unknown;
+        };
+        return {
+          id: String(s.id || `s-${idx + 1}`),
+          title: String(s.title || `Step ${idx + 1}`),
+          status: normalizeStepStatus(s.status),
+          startedAt:
+            typeof s.startedAt === "number" ? Number(s.startedAt) : undefined,
+          completedAt:
+            typeof s.completedAt === "number"
+              ? Number(s.completedAt)
+              : undefined,
+          error: s.error ? String(s.error) : undefined,
+          actionId: s.actionId ? String(s.actionId) : undefined,
+        } as SavedStructuredStep;
+      })
+    : [];
+  const resultRaw =
+    raw.result && typeof raw.result === "object"
+      ? (raw.result as { status?: unknown; message?: unknown })
+      : {};
+  return {
+    id: String(raw.id || `r-${Date.now()}`),
+    prompt: String(raw.prompt || ""),
+    createdAt:
+      typeof raw.createdAt === "number" ? Number(raw.createdAt) : Date.now(),
+    steps,
+    logs: normalizeTrace(raw.logs),
+    result: {
+      status: String(resultRaw.status || "pending"),
+      message: String(resultRaw.message || ""),
+    },
+  };
+}
+
 function defaultTabFromLegacy(
   goal: string,
   trace: SavedTraceEntry[],
@@ -56,6 +145,7 @@ function defaultTabFromLegacy(
     name: `New Task${suffix}`,
     prompt: goal,
     logs: trace,
+    latestRun: null,
   };
 }
 
@@ -80,6 +170,9 @@ function normalizeTabs(
         String(t.name || `New Task ${idx + 1}`).trim() || `New Task ${idx + 1}`,
       prompt: String(t.prompt || ""),
       logs: normalizeTrace(t.logs),
+      latestRun: normalizeStructuredRun(
+        (t as { latestRun?: unknown }).latestRun,
+      ),
     };
   });
   return normalized.length

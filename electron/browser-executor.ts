@@ -28,6 +28,10 @@ function findElement(rawSel) {
     try { const el = document.querySelector(s); if (el) return el; } catch(_) {}
   }
 
+  // If caller provided an explicit selector and nothing matched, fail fast.
+  // Blind fallback here can cause false positives (e.g. filling a random search box).
+  if (parts.length > 0) return null;
+
   // Semantic fallbacks for common input patterns
   const fallbacks = [
     'input[type="search"]',
@@ -70,7 +74,7 @@ const HELPERS = `${FIND_ELEMENT_FN}\n${WAIT_FOR_ELEMENT_FN}`;
 
 export async function executeInPage(
   webContents: Electron.WebContents,
-  action: BrowserAction
+  action: BrowserAction,
 ): Promise<{ success: boolean; error?: string }> {
   const sel = JSON.stringify(action.selector || "");
   const text = JSON.stringify(action.text || "");
@@ -135,11 +139,11 @@ export async function executeInPage(
       case "scroll": {
         const dir = action.direction || "down";
         const amt = action.amount || 300;
-        const mult = dir === "up" || dir === "left" ? -1 : 1;
+        const multiplier = dir === "up" || dir === "left" ? -1 : 1;
         const script =
           dir === "up" || dir === "down"
-            ? `window.scrollBy(0, ${amt * mult}); ({ success: true })`
-            : `window.scrollBy(${amt * mult}, 0); ({ success: true })`;
+            ? `window.scrollBy(0, ${amt * multiplier}); ({ success: true })`
+            : `window.scrollBy(${amt * multiplier}, 0); ({ success: true })`;
         await webContents.executeJavaScript(script);
         return { success: true };
       }
