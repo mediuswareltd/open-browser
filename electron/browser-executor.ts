@@ -28,9 +28,10 @@ function findElement(rawSel) {
     try { const el = document.querySelector(s); if (el) return el; } catch(_) {}
   }
 
-  // If caller provided an explicit selector and nothing matched, fail fast.
-  // Blind fallback here can cause false positives (e.g. filling a random search box).
-  if (parts.length > 0) return null;
+  // If caller provided an explicit selector and nothing matched, usually fail fast.
+  // Exception: allow search-like selectors to fall back to safe search inputs.
+  const looksLikeSearch = /search|\\bq\\b/i.test(rawSel);
+  if (parts.length > 0 && !looksLikeSearch) return null;
 
   // Semantic fallbacks for common input patterns
   const fallbacks = [

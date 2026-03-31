@@ -928,6 +928,22 @@ body {
   background: var(--text-muted);
 }
 
+.structured-step-row.loading .structured-step-title {
+  animation: structured-step-pulse 1s ease-in-out infinite;
+}
+
+@keyframes structured-step-pulse {
+  0% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.45;
+  }
+}
+
 .result-section {
   flex-shrink: 0;
   margin-bottom: var(--space-lg);

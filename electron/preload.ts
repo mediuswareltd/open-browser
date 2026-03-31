@@ -30,6 +30,14 @@ contextBridge.exposeInMainWorld("openBrowser", {
   getAiConfig: () => ipcRenderer.invoke("get-ai-config"),
   plan: (goal: string, provider?: string, apiKeyOverride?: string) =>
     ipcRenderer.invoke("plan", goal, provider, apiKeyOverride),
+  generateStepTitles: (
+    goal: string,
+    plan: Array<{
+      action: Record<string, unknown>;
+      requiresApproval?: boolean;
+    }>,
+    apiKeyOverride?: string,
+  ) => ipcRenderer.invoke("step-titles", goal, plan, apiKeyOverride),
   executeActionInBrowser: (action: Record<string, unknown>) =>
     ipcRenderer.invoke("browser-execute-action", action),
   runExecutionPlan: (

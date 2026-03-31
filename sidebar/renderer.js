@@ -144,6 +144,7 @@ function normalizeStructuredStep(step = {}, fallbackTitle = "Step") {
     error: step?.error ? String(step.error) : undefined,
     actionId: step?.actionId ? String(step.actionId) : undefined,
     isAction: Boolean(step?.isAction),
+    loading: Boolean(step?.loading),
   };
 }
 
@@ -221,6 +222,129 @@ function createStructuredSteps(goal, plan = []) {
     logs: normalizeTraceEntries(actionTrace),
     result: { status: "running", message: "Execution started" },
   };
+}
+
+function createStructuredStepsPlaceholder(goal, plan = []) {
+  const runId = createRunId();
+  const steps = [
+    {
+      id: `${runId}-interpret`,
+      title: "Generating steps...",
+      status: "running",
+      startedAt: Date.now(),
+      loading: true,
+    },
+  ];
+  plan.forEach((step, idx) => {
+    const action = step?.action || {};
+    steps.push({
+      id: `${runId}-action-${idx + 1}`,
+      title: `Generating step ${idx + 1}...`,
+      status: "pending",
+      actionId: String(action?.id || ""),
+      isAction: true,
+      loading: true,
+    });
+  });
+  steps.push({
+    id: `${runId}-finalize`,
+    title: "Generating steps...",
+    status: "pending",
+    loading: true,
+  });
+  return {
+    id: runId,
+    prompt: String(goal || ""),
+    createdAt: Date.now(),
+    steps: steps.map((step, idx) =>
+      normalizeStructuredStep(step, `Step ${idx + 1}`),
+    ),
+    logs: normalizeTraceEntries(actionTrace),
+    result: { status: "running", message: "Execution started" },
+  };
+}
+
+function sanitizeFriendlyStepTitle(value, fallback) {
+  const raw = String(value || "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!raw) return fallback;
+  return raw.length > 90 ? raw.slice(0, 90).trim() : raw;
+}
+
+function applyFriendlyTitlesToRun(run, titles = {}) {
+  if (!run || !Array.isArray(run.steps) || !run.steps.length) return run;
+  const steps = run.steps.map((step) => ({ ...step }));
+  const actionIndexes = [];
+  steps.forEach((step, idx) => {
+    if (step?.isAction) actionIndexes.push(idx);
+  });
+
+  const intro = steps[0];
+  if (intro && !intro.isAction) {
+    intro.title = sanitizeFriendlyStepTitle(
+      titles?.introTitle,
+      intro.title || "Prepare task",
+    );
+    intro.loading = false;
+  }
+
+  const actionTitles = Array.isArray(titles?.actionTitles)
+    ? titles.actionTitles
+    : [];
+  actionIndexes.forEach((idx, i) => {
+    const nextTitle = sanitizeFriendlyStepTitle(
+      actionTitles[i],
+      steps[idx].title || `Step ${i + 1}`,
+    );
+    steps[idx].title = nextTitle;
+    steps[idx].loading = false;
+  });
+
+  const outroIndex = steps.length - 1;
+  const outro = steps[outroIndex];
+  if (outro && !outro.isAction) {
+    outro.title = sanitizeFriendlyStepTitle(
+      titles?.outroTitle,
+      outro.title || "Wrap up task",
+    );
+    outro.loading = false;
+  }
+
+  return {
+    ...run,
+    steps,
+  };
+}
+
+async function fetchFriendlyTitles(goal, plan, apiKeyOverride) {
+  if (!window.openBrowser?.generateStepTitles) return null;
+  try {
+    return await window.openBrowser.generateStepTitles(
+      goal,
+      plan,
+      apiKeyOverride || undefined,
+    );
+  } catch (_) {
+    return null;
+  }
+}
+
+function buildStructuredRun(goal, plan, apiKeyOverride) {
+  if (!window.openBrowser?.generateStepTitles) {
+    return createStructuredSteps(goal, plan);
+  }
+
+  const run = createStructuredStepsPlaceholder(goal, plan);
+  void fetchFriendlyTitles(goal, plan, apiKeyOverride).then((titles) => {
+    if (!titles) return;
+    updateCurrentRun((current) => {
+      if (!current || current.id !== run.id) return current;
+      return applyFriendlyTitlesToRun(current, titles);
+    });
+  });
+
+  return run;
 }
 
 function getActionStepIndexForStart(steps = [], actionId = "") {
@@ -369,7 +493,7 @@ function renderStructuredSteps(run) {
   if (structuredStepsEmpty) structuredStepsEmpty.classList.add("hidden");
   steps.forEach((step) => {
     const row = document.createElement("div");
-    row.className = `structured-step-row ${normalizeStepStatus(step?.status)}`;
+    row.className = `structured-step-row ${normalizeStepStatus(step?.status)}${step?.loading ? " loading" : ""}`;
     const dot = document.createElement("span");
     dot.className = "structured-step-dot";
     const title = document.createElement("span");
@@ -1473,7 +1597,7 @@ btnExecute.addEventListener("click", async () => {
   }
   plan = ensurePlanStepActionIds(plan);
   currentPlan = plan;
-  currentStructuredRun = createStructuredSteps(goal, plan);
+  currentStructuredRun = buildStructuredRun(goal, plan, apiKeyOverride);
   renderStructuredRun();
   await persistGoalToProject();
 

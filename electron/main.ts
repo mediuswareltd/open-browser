@@ -12,6 +12,7 @@ import { pathToFileURL } from "node:url";
 import { createServer } from "./bridge-server";
 import { getAiConfig, type AiProvider } from "./config";
 import { planWithGemini } from "./gemini-planner";
+import { generateFriendlyStepTitles } from "./gemini-step-titles";
 import { planWithOllama } from "./ollama-planner";
 import { executeInPage } from "./browser-executor";
 import { Executor } from "../runtime/executor";
@@ -702,6 +703,29 @@ function setupIPC() {
     },
   );
   ipcMain.handle("get-ai-config", () => runtimeAiConfig);
+  ipcMain.handle(
+    "step-titles",
+    async (
+      _e,
+      goal: string,
+      plan: ExecutionPlanStep[] = [],
+      apiKeyOverride?: string,
+    ) => {
+      const key = (apiKeyOverride || runtimeAiConfig.geminiApiKey || "").trim();
+      if (!key) return null;
+      try {
+        return await generateFriendlyStepTitles(
+          String(goal || ""),
+          Array.isArray(plan) ? plan : [],
+          key,
+          runtimeAiConfig.model,
+        );
+      } catch (err) {
+        console.error("[OpenBrowser] Step title generation failed:", err);
+        return null;
+      }
+    },
+  );
   ipcMain.handle("projects-list", () => listProjects(userDataPath));
   ipcMain.handle("projects-save", (_e, data: unknown) => {
     try {
