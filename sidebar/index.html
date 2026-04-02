@@ -89,7 +89,7 @@
         <section class="goal-section goal-section--open">
           <h3 class="goal-section-title">Goal</h3>
           <p class="goal-section-desc">Saved goal for this project. Edit and run.</p>
-          <textarea id="goal-input" rows="3" placeholder="e.g. Search for weather in Tokyo, or open a URL…"></textarea>
+          <textarea id="goal-input" rows="4" placeholder="e.g. Search for weather in Tokyo, or open a URL…"></textarea>
           <div class="provider-row">
             <label for="ai-provider-select" class="sr-only">Model</label>
             <select id="ai-provider-select" class="ai-provider-select" title="Planning model">
@@ -116,11 +116,21 @@
             <span id="status-extension" class="status-value">Checking…</span>
           </div>
         </section>
+        <section class="steps-section">
+          <h3>Structured Steps</h3>
+          <div id="structured-steps" class="structured-steps">
+            <div id="structured-steps-empty" class="structured-steps-empty">No active run. Click Run to see step-by-step progress.</div>
+          </div>
+        </section>
         <section class="actions-section">
           <h3>Run log</h3>
           <div id="action-log" class="action-log">
             <div id="action-log-empty" class="action-log-empty">No runs yet. Set a goal above and click Run.</div>
           </div>
+        </section>
+        <section class="result-section">
+          <h3>Result</h3>
+          <div id="result-summary" class="result-summary">No result yet.</div>
         </section>
         <section class="approval-section" id="approval-section" hidden>
           <h3>Confirm action</h3>

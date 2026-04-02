@@ -3,13 +3,20 @@
  * Perceive → Decide → Act → Verify (simplified MVP)
  */
 
-import type { BrowserAction, PagePerception, ActionResult } from "../shared/schemas";
+import type {
+  BrowserAction,
+  PagePerception,
+  ActionResult,
+} from "../shared/schemas";
 import type { TraceEntry, ExecutorState } from "../shared/types";
 
 export type ExecutorCallbacks = {
   onStateChange?: (state: ExecutorState) => void;
   onTrace?: (entry: TraceEntry) => void;
-  onApprovalRequired?: (action: BrowserAction, resolve: (approved: boolean) => void) => void;
+  onApprovalRequired?: (
+    action: BrowserAction,
+    resolve: (approved: boolean) => void,
+  ) => void;
   executeAction?: (action: BrowserAction) => Promise<ActionResult>;
   perceive?: () => Promise<PagePerception | null>;
 };
@@ -31,15 +38,19 @@ export class Executor {
     return [...this.trace];
   }
 
+  private pushTrace(entry: TraceEntry) {
+    this.trace.push(entry);
+    this.callbacks.onTrace?.(entry);
+  }
+
   private setState(s: ExecutorState) {
     this.state = s;
-    this.trace.push({ timestamp: Date.now(), state: s });
+    this.pushTrace({ timestamp: Date.now(), state: s });
     this.callbacks.onStateChange?.(s);
-    this.callbacks.onTrace?.({ timestamp: Date.now(), state: s });
   }
 
   private log(message: string, data?: Partial<TraceEntry>) {
-    this.trace.push({
+    this.pushTrace({
       timestamp: Date.now(),
       state: this.state,
       message,
@@ -47,8 +58,13 @@ export class Executor {
     });
   }
 
-  async run(goal: string, plan: Array<{ action: BrowserAction; requiresApproval?: boolean }>) {
+  async run(
+    goal: string,
+    plan: Array<{ action: BrowserAction; requiresApproval?: boolean }>,
+  ) {
     this.setState("executing");
+    this.log(`Started goal: ${goal}`);
+    let hasFailure = false;
 
     for (const step of plan) {
       if (step.requiresApproval && this.callbacks.onApprovalRequired) {
@@ -62,15 +78,19 @@ export class Executor {
         }
       }
 
-      this.callbacks.onTrace?.({ timestamp: Date.now(), state: this.state, action: step.action });
+      this.pushTrace({
+        timestamp: Date.now(),
+        state: this.state,
+        action: step.action,
+      });
 
-      const result = await this.callbacks.executeAction?.(step.action) ?? {
+      const result = (await this.callbacks.executeAction?.(step.action)) ?? {
         actionId: step.action.id,
         success: false,
         error: "No executeAction callback",
       };
 
-      this.trace.push({
+      this.pushTrace({
         timestamp: Date.now(),
         state: this.state,
         action: step.action,
@@ -80,10 +100,12 @@ export class Executor {
       if (!result.success) {
         this.log(`Action failed: ${result.error}`, { result });
         this.setState("recovering");
+        hasFailure = true;
+        this.setState("executing");
       }
     }
 
-    this.setState("completed");
+    this.setState(hasFailure ? "failed" : "completed");
   }
 }
 
@@ -91,7 +113,10 @@ function genId() {
   return "a-" + Math.random().toString(36).slice(2, 12);
 }
 
-export function createAction(type: "click" | "type" | "fill" | "navigate" | "scroll", params: Record<string, unknown>): BrowserAction {
+export function createAction(
+  type: "click" | "type" | "fill" | "navigate" | "scroll",
+  params: Record<string, unknown>,
+): BrowserAction {
   return {
     id: genId(),
     type,

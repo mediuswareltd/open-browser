@@ -3,6 +3,8 @@
  * Bypasses extension when extension can't reach the tab (Electron tab mapping)
  */
 
+import type { WebContents } from "electron";
+
 export interface BrowserAction {
   id: string;
   type: string;
@@ -27,6 +29,11 @@ function findElement(rawSel) {
   for (const s of parts) {
     try { const el = document.querySelector(s); if (el) return el; } catch(_) {}
   }
+
+  // If caller provided an explicit selector and nothing matched, usually fail fast.
+  // Exception: allow search-like selectors to fall back to safe search inputs.
+  const looksLikeSearch = /search|\\bq\\b/i.test(rawSel);
+  if (parts.length > 0 && !looksLikeSearch) return null;
 
   // Semantic fallbacks for common input patterns
   const fallbacks = [
@@ -69,8 +76,8 @@ async function waitForElement(rawSel, maxMs, intervalMs) {
 const HELPERS = `${FIND_ELEMENT_FN}\n${WAIT_FOR_ELEMENT_FN}`;
 
 export async function executeInPage(
-  webContents: Electron.WebContents,
-  action: BrowserAction
+  webContents: WebContents,
+  action: BrowserAction,
 ): Promise<{ success: boolean; error?: string }> {
   const sel = JSON.stringify(action.selector || "");
   const text = JSON.stringify(action.text || "");
@@ -135,11 +142,11 @@ export async function executeInPage(
       case "scroll": {
         const dir = action.direction || "down";
         const amt = action.amount || 300;
-        const mult = dir === "up" || dir === "left" ? -1 : 1;
+        const multiplier = dir === "up" || dir === "left" ? -1 : 1;
         const script =
           dir === "up" || dir === "down"
-            ? `window.scrollBy(0, ${amt * mult}); ({ success: true })`
-            : `window.scrollBy(${amt * mult}, 0); ({ success: true })`;
+            ? `window.scrollBy(0, ${amt * multiplier}); ({ success: true })`
+            : `window.scrollBy(${amt * multiplier}, 0); ({ success: true })`;
         await webContents.executeJavaScript(script);
         return { success: true };
       }
