@@ -3,6 +3,8 @@
  * Bypasses extension when extension can't reach the tab (Electron tab mapping)
  */
 
+import type { WebContents } from "electron";
+
 export interface BrowserAction {
   id: string;
   type: string;
@@ -74,7 +76,7 @@ async function waitForElement(rawSel, maxMs, intervalMs) {
 const HELPERS = `${FIND_ELEMENT_FN}\n${WAIT_FOR_ELEMENT_FN}`;
 
 export async function executeInPage(
-  webContents: Electron.WebContents,
+  webContents: WebContents,
   action: BrowserAction,
 ): Promise<{ success: boolean; error?: string }> {
   const sel = JSON.stringify(action.selector || "");
