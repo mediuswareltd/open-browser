@@ -10,6 +10,9 @@ const goalInput = document.getElementById("goal-input");
 const btnExecute = document.getElementById("btn-execute");
 const statusState = document.getElementById("status-state");
 const statusExtension = document.getElementById("status-extension");
+const statusConnectionLabel = document.getElementById(
+  "status-connection-label",
+);
 const actionLog = document.getElementById("action-log");
 const approvalSection = document.getElementById("approval-section");
 const approvalMessage = document.getElementById("approval-message");
@@ -58,6 +61,9 @@ const btnSettingsApiKeyVisibility = document.getElementById(
   "btn-settings-api-key-visibility",
 );
 const settingsModelSelect = document.getElementById("settings-model-select");
+const settingsExecutorModeSelect = document.getElementById(
+  "settings-executor-mode",
+);
 const btnSettingsChangeKey = document.getElementById("btn-settings-change-key");
 const btnSettingsRemoveKey = document.getElementById("btn-settings-remove-key");
 const btnSettingsProfiles = document.getElementById("btn-settings-profiles");
@@ -88,6 +94,8 @@ let aiProviderSelectBound = false;
 let profileState = { profiles: [], activeProfileId: "default" };
 let executorBridgeBound = false;
 let currentStructuredRun = null;
+let currentExecutorMode = "browserview";
+let bridgeConnected = false;
 
 function createTaskTabId() {
   return `t-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -846,11 +854,13 @@ async function init() {
         currentAiModel = cfg.model || currentAiModel;
         setupAiProviderSelect(cfg);
       }
+      await refreshExecutorModeState();
     } catch (e) {
       console.warn("[OpenBrowser] init:", e);
     }
   }
   if (!bridgePort) bridgePort = 9333;
+  renderExecutorConnectionStatus();
   connectToBridge();
   setupBrowser();
   setupExecutorBridge();
@@ -1202,6 +1212,43 @@ function applyAiConfigToUi(config) {
   if (apiKeyInput) apiKeyInput.value = geminiKey;
 }
 
+function normalizeExecutorMode(value) {
+  return value === "playwright" ? "playwright" : "browserview";
+}
+
+function renderExecutorConnectionStatus() {
+  if (!statusExtension) return;
+
+  if (currentExecutorMode === "playwright") {
+    if (statusConnectionLabel) statusConnectionLabel.textContent = "Playwright";
+    statusExtension.textContent = "uses current browser session";
+    statusExtension.className = "status-value connected";
+    return;
+  }
+
+  if (statusConnectionLabel) statusConnectionLabel.textContent = "Extension";
+  if (!bridgePort) {
+    statusExtension.textContent = "no bridge";
+    statusExtension.className = "status-value disconnected";
+    return;
+  }
+  statusExtension.textContent = bridgeConnected ? "ready" : "disconnected";
+  statusExtension.className = `status-value ${bridgeConnected ? "connected" : "disconnected"}`;
+}
+
+async function refreshExecutorModeState() {
+  const mode = await window.openBrowser?.getExecutorMode?.();
+  currentExecutorMode = normalizeExecutorMode(mode);
+  return currentExecutorMode;
+}
+
+async function syncSettingsExecutorModeUi() {
+  if (!settingsExecutorModeSelect) return;
+  const mode = await refreshExecutorModeState();
+  settingsExecutorModeSelect.value = mode;
+  renderExecutorConnectionStatus();
+}
+
 async function showMainInterface() {
   try {
     await window.openBrowser?.startMainInterface?.();
@@ -1244,6 +1291,7 @@ function setupSettingsMenu() {
     );
     await refreshProfilesState();
     renderProfilesList();
+    await syncSettingsExecutorModeUi();
     setProfilesPanelOpen(false);
     setSettingsMessage("");
   });
@@ -1294,6 +1342,26 @@ function setupSettingsMenu() {
     } catch (_) {
       setSettingsMessage("Failed to rename profile", "error");
     }
+  });
+
+  settingsExecutorModeSelect?.addEventListener("change", async () => {
+    const nextMode = normalizeExecutorMode(settingsExecutorModeSelect.value);
+    const result = await window.openBrowser?.setExecutorMode?.(nextMode);
+    if (!result?.ok) {
+      setSettingsMessage(
+        result?.error || "Failed to set execution mode",
+        "error",
+      );
+      await syncSettingsExecutorModeUi();
+      return;
+    }
+    currentExecutorMode = normalizeExecutorMode(result.mode);
+    settingsExecutorModeSelect.value = currentExecutorMode;
+    renderExecutorConnectionStatus();
+    setSettingsMessage(
+      `Execution mode set to ${currentExecutorMode}`,
+      "success",
+    );
   });
 
   btnSettingsChangeKey?.addEventListener("click", async () => {
@@ -1417,23 +1485,23 @@ function setupAiProviderSelect(cfg) {
 
 function connectToBridge() {
   if (!bridgePort) {
-    statusExtension.textContent = "no bridge";
-    statusExtension.className = "status-value disconnected";
+    bridgeConnected = false;
+    renderExecutorConnectionStatus();
     return;
   }
   const ws = new WebSocket(`ws://127.0.0.1:${bridgePort}`);
   extensionSocket = ws;
 
   ws.onopen = () => {
-    statusExtension.textContent = "ready";
-    statusExtension.className = "status-value connected";
+    bridgeConnected = true;
+    renderExecutorConnectionStatus();
     ws.send(JSON.stringify({ type: "identify", role: "renderer" }));
     ws.send(JSON.stringify({ type: "ping" }));
   };
 
   ws.onclose = () => {
-    statusExtension.textContent = "disconnected";
-    statusExtension.className = "status-value disconnected";
+    bridgeConnected = false;
+    renderExecutorConnectionStatus();
     setTimeout(connectToBridge, 2000);
   };
 
@@ -1605,7 +1673,18 @@ btnExecute.addEventListener("click", async () => {
     if (!window.openBrowser?.runExecutionPlan) {
       throw new Error("Executor runtime is unavailable");
     }
-    const runResult = await window.openBrowser.runExecutionPlan(goal, plan);
+    let selectedMode = currentExecutorMode;
+    try {
+      selectedMode = await refreshExecutorModeState();
+      renderExecutorConnectionStatus();
+    } catch (_) {}
+    logAction({ message: `Executor mode: ${selectedMode}` }, "info");
+
+    const runResult = await window.openBrowser.runExecutionPlan(
+      goal,
+      plan,
+      selectedMode,
+    );
     if (!runResult?.ok) {
       updateCurrentRun((run) => {
         run.result = {

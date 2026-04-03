@@ -112,7 +112,7 @@
             <span id="status-state" class="status-value status-idle">Idle</span>
           </div>
           <div class="status-row">
-            <span class="status-label">Extension</span>
+            <span id="status-connection-label" class="status-label">Extension</span>
             <span id="status-extension" class="status-value">Checking…</span>
           </div>
         </section>
@@ -166,6 +166,11 @@
             </div>
             <label for="settings-model-select" class="settings-label">Models</label>
             <select id="settings-model-select" class="ai-provider-select" title="Gemini model"></select>
+            <label for="settings-executor-mode" class="settings-label">Execution Mode</label>
+            <select id="settings-executor-mode" class="ai-provider-select" title="Execution mode">
+              <option value="browserview">BrowserView (default)</option>
+              <option value="playwright">Playwright (experimental)</option>
+            </select>
             <div class="settings-actions">
               <button type="button" id="btn-settings-change-key" class="btn-primary btn-sm">Change Key</button>
             </div>

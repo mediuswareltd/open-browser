@@ -22,6 +22,9 @@ contextBridge.exposeInMainWorld("openBrowser", {
     ipcRenderer.invoke("list-gemini-models", apiKeyOverride),
   clearAiConfigAndReset: () => ipcRenderer.invoke("clear-ai-config-and-reset"),
   startMainInterface: () => ipcRenderer.invoke("start-main-interface"),
+  getExecutorMode: () => ipcRenderer.invoke("executor-get-mode"),
+  setExecutorMode: (mode: "browserview" | "playwright") =>
+    ipcRenderer.invoke("executor-set-mode", mode),
   browserNavigate: (url: string) => ipcRenderer.invoke("browser-navigate", url),
   browserGetUrl: () => ipcRenderer.invoke("browser-get-url"),
   onBrowserUrlChanged: (cb: (url: string) => void) => {
@@ -46,7 +49,8 @@ contextBridge.exposeInMainWorld("openBrowser", {
       action: Record<string, unknown>;
       requiresApproval?: boolean;
     }>,
-  ) => ipcRenderer.invoke("executor-run", goal, plan),
+    modeOverride?: "browserview" | "playwright",
+  ) => ipcRenderer.invoke("executor-run", goal, plan, modeOverride),
   respondToExecutorApproval: (requestId: string, approved: boolean) =>
     ipcRenderer.invoke("executor-approval-response", requestId, approved),
   onExecutorState: (cb: (state: string) => void) => {

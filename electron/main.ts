@@ -15,6 +15,7 @@ import { planWithGemini } from "./gemini-planner";
 import { generateFriendlyStepTitles } from "./gemini-step-titles";
 import { planWithOllama } from "./ollama-planner";
 import { executeInPage } from "./browser-executor";
+import { PlaywrightExecutionSession } from "./playwright/playwright-executor";
 import { Executor } from "../runtime/executor";
 import type { BrowserAction } from "../shared/schemas";
 import type { TraceEntry } from "../shared/types";
@@ -35,8 +36,22 @@ const SIDEBAR_COLLAPSED = 52;
 const BROWSER_PARTITION_PREFIX = "persist:openbrowser:";
 const DEFAULT_PROFILE_ID = "default";
 const DEFAULT_PROFILE_NAME = "Default";
+const DEFAULT_EXECUTOR_MODE = "browserview";
+const DEFAULT_CDP_PORT = 9339;
 /* Match address bar visual height: 12px padding-top + 38px bar + 20px margin-bottom = 70 */
 const URL_BAR_HEIGHT = 72;
+
+function resolveCdpPort(): number {
+  const raw = Number.parseInt(
+    String(process.env.OPENBROWSER_CDP_PORT || DEFAULT_CDP_PORT),
+    10,
+  );
+  if (Number.isFinite(raw) && raw >= 1024 && raw <= 65535) return raw;
+  return DEFAULT_CDP_PORT;
+}
+
+const cdpPort = resolveCdpPort();
+app.commandLine.appendSwitch("remote-debugging-port", String(cdpPort));
 
 let mainWindow: BrowserWindow | null = null;
 let sidebarWidth = SIDEBAR_EXPANDED;
@@ -49,6 +64,7 @@ let profiles: StoredProfile[] = [
   { id: DEFAULT_PROFILE_ID, name: DEFAULT_PROFILE_NAME },
 ];
 let activeProfileId = DEFAULT_PROFILE_ID;
+let executorMode: ExecutorMode = DEFAULT_EXECUTOR_MODE;
 const pendingApprovals = new Map<
   string,
   {
@@ -75,11 +91,19 @@ interface StoredAppConfig {
   model?: string;
   profiles?: StoredProfile[];
   activeProfileId?: string;
+  executorMode?: ExecutorMode;
 }
+
+type ExecutorMode = "browserview" | "playwright";
 
 function toAiProvider(value: unknown): AiProvider | null {
   if (value === "gemini" || value === "ollama" || value === "heuristic")
     return value;
+  return null;
+}
+
+function toExecutorMode(value: unknown): ExecutorMode | null {
+  if (value === "browserview" || value === "playwright") return value;
   return null;
 }
 
@@ -182,6 +206,22 @@ function writeStoredProfilesState(
     profiles: profiles,
     activeProfileId,
   });
+}
+
+function readStoredExecutorMode(): ExecutorMode {
+  const raw = readStoredAppConfig();
+  const envMode = toExecutorMode(process.env.OPENBROWSER_EXECUTOR_MODE);
+  return toExecutorMode(raw?.executorMode) || envMode || DEFAULT_EXECUTOR_MODE;
+}
+
+function writeStoredExecutorMode(mode: ExecutorMode): ExecutorMode {
+  const current = readStoredAppConfig() || {};
+  executorMode = mode;
+  writeStoredAppConfig({
+    ...current,
+    executorMode: mode,
+  });
+  return executorMode;
 }
 
 function clearStoredAiConfig() {
@@ -520,6 +560,10 @@ function sendExecutorTrace(sender: Electron.WebContents, entry: TraceEntry) {
   sender.send("executor-trace", entry);
 }
 
+function resolveExecutorMode(modeOverride?: unknown): ExecutorMode {
+  return toExecutorMode(modeOverride) || executorMode;
+}
+
 async function requestExecutorApproval(
   sender: Electron.WebContents,
   action: BrowserAction,
@@ -553,10 +597,65 @@ async function runExecutionPlan(
   sender: Electron.WebContents,
   goal: string,
   plan: ExecutionPlanStep[],
+  modeOverride?: unknown,
 ) {
-  if (!browserView?.webContents) {
+  const selectedMode = resolveExecutorMode(modeOverride);
+  const currentUrl =
+    browserView?.webContents?.getURL() || "https://www.google.com";
+
+  if (selectedMode === "browserview" && !browserView?.webContents) {
     return { ok: false, error: "No browser view", state: "failed", trace: [] };
   }
+  if (selectedMode === "playwright" && !browserView?.webContents) {
+    return {
+      ok: false,
+      error: "No browser view available for Playwright attachment",
+      state: "failed",
+      trace: [],
+    };
+  }
+
+  let playwrightSession: PlaywrightExecutionSession | null = null;
+  if (selectedMode === "playwright") {
+    const cdpEndpointUrl = `http://127.0.0.1:${cdpPort}`;
+    playwrightSession = new PlaywrightExecutionSession({
+      cdpEndpointUrl,
+      targetUrlHint: currentUrl,
+      allowLaunchFallback: false,
+      log: (message) =>
+        sendExecutorTrace(sender, {
+          timestamp: Date.now(),
+          state: "executing",
+          message: `[playwright] ${message}`,
+        }),
+    });
+    try {
+      await playwrightSession.start(currentUrl);
+    } catch (err) {
+      const msg = String((err as Error)?.message || err);
+      const launchHint = /connect over CDP|CDP|attachable page/i.test(msg)
+        ? ` Playwright could not attach to the existing OpenBrowser Chromium session at ${cdpEndpointUrl}. Restart the app and try again.`
+        : "";
+      sendExecutorState(sender, "failed");
+      sendExecutorTrace(sender, {
+        timestamp: Date.now(),
+        state: "failed",
+        message: `Playwright bootstrap failed: ${msg}${launchHint}`,
+      });
+      return {
+        ok: false,
+        error: `${msg}${launchHint}`,
+        state: "failed",
+        trace: [],
+      };
+    }
+  }
+
+  sendExecutorTrace(sender, {
+    timestamp: Date.now(),
+    state: "executing",
+    message: `Executor mode: ${selectedMode}`,
+  });
 
   const executor = new Executor({
     onStateChange: (state) => sendExecutorState(sender, state),
@@ -566,6 +665,29 @@ async function runExecutionPlan(
       resolve(approved);
     },
     executeAction: async (action) => {
+      if (selectedMode === "playwright") {
+        if (!playwrightSession) {
+          return {
+            actionId: action.id,
+            success: false,
+            error: "Playwright executor not initialized",
+          };
+        }
+        const result = await playwrightSession.executeAction(action);
+        if (result.screenshotPath) {
+          sendExecutorTrace(sender, {
+            timestamp: Date.now(),
+            state: "executing",
+            message: `Playwright screenshot: ${result.screenshotPath}`,
+          });
+        }
+        return {
+          actionId: action.id,
+          success: Boolean(result.success),
+          error: result.error,
+        };
+      }
+
       if (!browserView?.webContents) {
         return {
           actionId: action.id,
@@ -598,6 +720,7 @@ async function runExecutionPlan(
     await executor.run(goal, plan);
     return {
       ok: true,
+      mode: selectedMode,
       state: executor.getState(),
       trace: executor.getTrace(),
     };
@@ -611,9 +734,22 @@ async function runExecutionPlan(
     return {
       ok: false,
       error: String((err as Error)?.message || err),
+      mode: selectedMode,
       state: "failed",
       trace: executor.getTrace(),
     };
+  } finally {
+    if (playwrightSession) {
+      try {
+        await playwrightSession.close();
+      } catch (err) {
+        sendExecutorTrace(sender, {
+          timestamp: Date.now(),
+          state: "executing",
+          message: `Playwright close warning: ${String((err as Error)?.message || err)}`,
+        });
+      }
+    }
   }
 }
 
@@ -648,6 +784,14 @@ function setupIPC() {
   });
   ipcMain.handle("clear-ai-config-and-reset", () => clearAiConfigAndReset());
   ipcMain.handle("start-main-interface", async () => startMainInterface());
+  ipcMain.handle("executor-get-mode", () => executorMode);
+  ipcMain.handle("executor-set-mode", (_e, mode: unknown) => {
+    const nextMode = toExecutorMode(mode);
+    if (!nextMode) {
+      return { ok: false, error: "Invalid executor mode", mode: executorMode };
+    }
+    return { ok: true, mode: writeStoredExecutorMode(nextMode) };
+  });
   ipcMain.handle("profiles-get", () => getProfilesPayload());
   ipcMain.handle("profiles-create", (_e, name?: string) => createProfile(name));
   ipcMain.handle("profiles-rename", (_e, id: string, name: string) =>
@@ -698,8 +842,18 @@ function setupIPC() {
   );
   ipcMain.handle(
     "executor-run",
-    async (_e, goal: string, plan: ExecutionPlanStep[] = []) => {
-      return runExecutionPlan(_e.sender, String(goal || ""), plan || []);
+    async (
+      _e,
+      goal: string,
+      plan: ExecutionPlanStep[] = [],
+      modeOverride?: unknown,
+    ) => {
+      return runExecutionPlan(
+        _e.sender,
+        String(goal || ""),
+        plan || [],
+        modeOverride,
+      );
     },
   );
   ipcMain.handle("get-ai-config", () => runtimeAiConfig);
@@ -783,6 +937,8 @@ app.whenReady().then(async () => {
     storedProfilesState.profiles,
     storedProfilesState.activeProfileId,
   );
+  executorMode = readStoredExecutorMode();
+  writeStoredExecutorMode(executorMode);
   const storedAiConfig = readStoredAiConfig();
   if (storedAiConfig) applyStoredAiConfig(storedAiConfig);
 
