@@ -78,8 +78,8 @@ const settingsMessage = document.getElementById("settings-message");
 
 const WELCOME_DISMISSED_KEY = "openbrowser-welcome-dismissed";
 const SIDEBAR_COLLAPSED_KEY = "openbrowser-sidebar-collapsed";
-const SIDEBAR_WIDTH_EXPANDED = 320;
-const SIDEBAR_WIDTH_COLLAPSED = 52;
+const SIDEBAR_WIDTH_EXPANDED = 360;
+const SIDEBAR_WIDTH_COLLAPSED = 56;
 
 let bridgePort = 0;
 let extensionSocket = null;
@@ -887,7 +887,7 @@ async function init() {
       sidebarToggle.setAttribute("aria-label", "Expand sidebar");
       sidebarToggle.title = "Expand sidebar";
       const icon = sidebarToggle.querySelector(".sidebar-toggle-icon");
-      if (icon) icon.textContent = "▶";
+      if (icon) icon.textContent = "<";
     }
   }
 }
@@ -917,11 +917,11 @@ function setupSidebarToggle() {
     );
     sidebarToggle.title = collapsed ? "Expand sidebar" : "Collapse sidebar";
     const icon = sidebarToggle.querySelector(".sidebar-toggle-icon");
-    if (icon) icon.textContent = collapsed ? "▶" : "◀";
+    if (icon) icon.textContent = collapsed ? "<" : ">";
   });
   const collapsed = localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1";
   const icon = sidebarToggle.querySelector(".sidebar-toggle-icon");
-  if (icon) icon.textContent = collapsed ? "▶" : "◀";
+  if (icon) icon.textContent = collapsed ? "<" : ">";
 }
 
 function showProjectsView() {

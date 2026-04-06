@@ -6,7 +6,7 @@
   <title>OpenBrowser</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Sora:wght@500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -39,20 +39,20 @@
   <div id="app-shell" class="layout" hidden>
     <aside id="sidebar" class="sidebar" role="complementary">
       <button type="button" id="sidebar-toggle" class="sidebar-toggle" aria-label="Toggle sidebar" title="Toggle sidebar">
-        <span class="sidebar-toggle-icon" aria-hidden="true">◀</span>
+        <span class="sidebar-toggle-icon" aria-hidden="true">&gt;</span>
       </button>
       <div class="sidebar-content">
       <header class="sidebar-header">
         <div class="logo">
           <img src="../arts/logo.png" alt="" class="logo-icon" width="32" height="32" />
           <div class="logo-text">
-            <h1>OpenBrowser</h1>
-            <span class="tagline">AI-powered browser automation</span>
+            <h1>Assistant</h1>
+            <span class="tagline">Plan, run, and track browser tasks</span>
           </div>
         </div>
       </header>
 
-      <!-- View 1: Projects (parent) — no goal, only project list -->
+      <!-- View 1: Projects (parent) - no goal, only project list -->
       <div id="view-projects" class="sidebar-view sidebar-view--active">
         <div id="welcome-block" class="welcome-block">
           <h2>Projects</h2>
@@ -70,10 +70,10 @@
         </section>
       </div>
 
-      <!-- View 2: Project detail (child) — goal, run, log for selected project -->
+      <!-- View 2: Project detail (child) - goal, run, log for selected project -->
       <div id="view-project-detail" class="sidebar-view" hidden>
         <button type="button" id="btn-back-to-projects" class="back-to-projects">
-          <span class="back-to-projects-icon" aria-hidden="true">←</span>
+          <span class="back-to-projects-icon" aria-hidden="true">&lt;</span>
           Back to Projects
         </button>
         <div class="project-detail-header">
@@ -89,16 +89,12 @@
         <section class="goal-section goal-section--open">
           <h3 class="goal-section-title">Goal</h3>
           <p class="goal-section-desc">Saved goal for this project. Edit and run.</p>
-          <textarea id="goal-input" rows="4" placeholder="e.g. Search for weather in Tokyo, or open a URL…"></textarea>
+          <textarea id="goal-input" rows="4" placeholder="e.g. Search for weather in Tokyo, or open a URL..."></textarea>
           <div class="provider-row">
             <label for="ai-provider-select" class="sr-only">Model</label>
             <select id="ai-provider-select" class="ai-provider-select" title="Planning model">
-              <!-- <option value="heuristic">Quick (no AI)</option> -->
               <option value="gemini">Gemini</option>
-              <!-- <option value="ollama">Ollama</option> -->
             </select>
-            <!-- <input type="password" id="api-key-input" class="api-key-input" placeholder="API key (optional)" autocomplete="off" title="Override API key from .env" />
-            <span id="api-key-label" class="sr-only">API key</span> -->
           </div>
           <div class="execute-buttons">
             <button id="btn-execute" class="btn-primary">
@@ -113,7 +109,7 @@
           </div>
           <div class="status-row">
             <span id="status-connection-label" class="status-label">Extension</span>
-            <span id="status-extension" class="status-value">Checking…</span>
+            <span id="status-extension" class="status-value">Checking...</span>
           </div>
         </section>
         <section class="steps-section">
@@ -148,7 +144,7 @@
           <span class="footer-version">v0.1.0</span>
         </div>
         <div id="settings-menu" class="settings-menu">
-          <button type="button" id="btn-settings" class="btn-secondary btn-sm btn-settings">⚙ Settings</button>
+          <button type="button" id="btn-settings" class="btn-secondary btn-sm btn-settings">Settings</button>
           <div id="settings-panel" class="settings-panel" hidden>
             <h3 class="settings-title">Settings</h3>
             <label for="settings-provider-select" class="settings-label">AI Provider</label>
@@ -194,9 +190,17 @@
 
     <main class="browser-area">
       <div class="browser-chrome">
-        <span class="url-bar-icon" aria-hidden="true">◇</span>
-        <input type="text" id="url-bar" class="url-bar" placeholder="Enter URL or search…" value="https://www.google.com" aria-label="Address" spellcheck="false" />
-        <button id="btn-go" class="btn-go" type="button">Go</button>
+        <div class="browser-toolbar-actions">
+          <button type="button" class="toolbar-btn" aria-label="Back">&lt;</button>
+          <button type="button" class="toolbar-btn" aria-label="Forward">&gt;</button>
+          <button type="button" class="toolbar-btn" aria-label="Reload">&#8635;</button>
+        </div>
+        <div class="address-cluster">
+          <span class="url-bar-icon" aria-hidden="true">&#9906;</span>
+          <input type="text" id="url-bar" class="url-bar" placeholder="Search or enter a URL..." value="https://www.google.com" aria-label="Address" spellcheck="false" />
+          <button id="btn-go" class="btn-go" type="button">Go</button>
+        </div>
+        <span class="search-badge">Workspace</span>
       </div>
     </main>
   </div>

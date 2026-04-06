@@ -31,15 +31,15 @@ const userDataPath = path.join(app.getPath("userData"), "open-browser");
 const projectRoot = path.join(__dirname, "..", "..");
 const extensionPath = path.join(projectRoot, "extension");
 const configFilePath = path.join(userDataPath, "config.json");
-const SIDEBAR_EXPANDED = 320;
-const SIDEBAR_COLLAPSED = 52;
+const SIDEBAR_EXPANDED = 360;
+const SIDEBAR_COLLAPSED = 56;
 const BROWSER_PARTITION_PREFIX = "persist:openbrowser:";
 const DEFAULT_PROFILE_ID = "default";
 const DEFAULT_PROFILE_NAME = "Default";
 const DEFAULT_EXECUTOR_MODE = "browserview";
 const DEFAULT_CDP_PORT = 9339;
-/* Match address bar visual height: 12px padding-top + 38px bar + 20px margin-bottom = 70 */
-const URL_BAR_HEIGHT = 72;
+/* Match browser toolbar footprint (toolbar block + vertical margins). */
+const URL_BAR_HEIGHT = 84;
 
 function resolveCdpPort(): number {
   const raw = Number.parseInt(
@@ -378,7 +378,7 @@ function updateBrowserViewBounds(win: BrowserWindow) {
   if (!browserView) return;
   const [w, h] = win.getContentSize();
   browserView.setBounds({
-    x: sidebarWidth,
+    x: 0,
     y: URL_BAR_HEIGHT,
     width: Math.max(0, w - sidebarWidth),
     height: Math.max(0, h - URL_BAR_HEIGHT),
