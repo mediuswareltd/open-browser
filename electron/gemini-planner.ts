@@ -17,6 +17,17 @@ Available action types:
 
 Each action MUST have a unique "id" field (e.g. "a-1", "a-2").
 Set "requiresApproval": true for risky actions (login, payment, checkout, password input).
+Prefer short, reliable plans:
+- Navigate first, then interact.
+- Use stable selectors (name/id/aria-label) and avoid brittle deep selectors.
+- For search flows, prefer explicit steps:
+  1) focus/fill search input
+  2) click search button OR submit input
+  3) optional lightweight verification (screenshot)
+- For YouTube search, prefer selectors like:
+  input#search-input, input[name="search_query"], ytd-searchbox input
+  and search button selectors like:
+  #search-icon-legacy button, button[aria-label*="Search" i], #search-icon-legacy
 
 Output ONLY a valid JSON array, no markdown or explanation. Example:
 [{"action":{"id":"a-1","type":"navigate","url":"https://www.google.com"}},{"action":{"id":"a-2","type":"type","selector":"textarea[name=q], input[name=q]","text":"weather","submit":true}}]
@@ -42,7 +53,7 @@ export interface PlanStep {
 export async function planWithGemini(
   goal: string,
   apiKey: string,
-  model = "gemini-2.0-flash"
+  model = "gemini-2.0-flash",
 ): Promise<PlanStep[]> {
   const ai = new GoogleGenAI({ apiKey });
   const response = await ai.models.generateContent({

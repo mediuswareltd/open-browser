@@ -94,7 +94,7 @@ let aiProviderSelectBound = false;
 let profileState = { profiles: [], activeProfileId: "default" };
 let executorBridgeBound = false;
 let currentStructuredRun = null;
-let currentExecutorMode = "browserview";
+let currentExecutorMode = "playwright";
 let bridgeConnected = false;
 
 function createTaskTabId() {
@@ -182,17 +182,13 @@ function normalizeStructuredRun(run) {
 
 function actionLabel(action = {}) {
   const type = String(action?.type || "action");
-  if (type === "navigate")
-    return `Open ${String(action?.url || "target page")}`;
-  if (type === "fill" || type === "type")
-    return `Fill ${String(action?.selector || "input field")}`;
-  if (type === "click")
-    return `Click ${String(action?.selector || "target element")}`;
-  if (type === "select")
-    return `Select ${String(action?.selector || "dropdown option")}`;
-  if (type === "scroll") return `Scroll ${String(action?.direction || "page")}`;
-  if (type === "screenshot") return "Capture screenshot";
-  return `Run ${type}`;
+  if (type === "navigate") return "Navigate page";
+  if (type === "fill" || type === "type") return "Fill";
+  if (type === "click") return "Click";
+  if (type === "select") return "Select";
+  if (type === "scroll") return "Scroll page";
+  if (type === "screenshot") return "Take snapshot";
+  return `Run ${String(type)}`;
 }
 
 function createStructuredSteps(goal, plan = []) {
@@ -339,20 +335,7 @@ async function fetchFriendlyTitles(goal, plan, apiKeyOverride) {
 }
 
 function buildStructuredRun(goal, plan, apiKeyOverride) {
-  if (!window.openBrowser?.generateStepTitles) {
-    return createStructuredSteps(goal, plan);
-  }
-
-  const run = createStructuredStepsPlaceholder(goal, plan);
-  void fetchFriendlyTitles(goal, plan, apiKeyOverride).then((titles) => {
-    if (!titles) return;
-    updateCurrentRun((current) => {
-      if (!current || current.id !== run.id) return current;
-      return applyFriendlyTitlesToRun(current, titles);
-    });
-  });
-
-  return run;
+  return createStructuredSteps(goal, plan);
 }
 
 function getActionStepIndexForStart(steps = [], actionId = "") {
@@ -509,6 +492,28 @@ function renderStructuredSteps(run) {
     title.textContent = step?.error
       ? `${step.title} (${step.error})`
       : step.title;
+    row.appendChild(dot);
+    row.appendChild(title);
+    structuredStepsEl.appendChild(row);
+  });
+
+  const logs = Array.isArray(run?.logs) ? run.logs : [];
+  const detailed = logs
+    .map((entry) => String(entry?.msg || "").trim())
+    .filter((msg) =>
+      /^(The user wants me to|Thought:|Thought for|- |Planned step|1\/1 actions completed|Action:|Execution summary:|Done!)/i.test(
+        msg,
+      ),
+    )
+    .slice(-10);
+  detailed.forEach((msg) => {
+    const row = document.createElement("div");
+    row.className = "structured-step-row done narrative";
+    const dot = document.createElement("span");
+    dot.className = "structured-step-dot";
+    const title = document.createElement("span");
+    title.className = "structured-step-title";
+    title.textContent = msg;
     row.appendChild(dot);
     row.appendChild(title);
     structuredStepsEl.appendChild(row);
@@ -1221,7 +1226,7 @@ function renderExecutorConnectionStatus() {
 
   if (currentExecutorMode === "playwright") {
     if (statusConnectionLabel) statusConnectionLabel.textContent = "Playwright";
-    statusExtension.textContent = "uses current browser session";
+    statusExtension.textContent = "connected via CDP session";
     statusExtension.className = "status-value connected";
     return;
   }
@@ -1581,6 +1586,17 @@ function logExecutorTrace(entry) {
     return;
   }
   if (entry.message) {
+    const msg = String(entry.message || "").trim();
+    if (msg.startsWith("Execution summary:")) {
+      const summaryText = msg.replace(/^Execution summary:\s*/i, "").trim();
+      updateCurrentRun((run) => {
+        run.result = {
+          status: run.result?.status === "failed" ? "failed" : "done",
+          message: summaryText || run.result?.message || "Execution completed.",
+        };
+        return run;
+      });
+    }
     const kind =
       entry.state === "failed" || entry.state === "recovering"
         ? "error"
@@ -1663,6 +1679,17 @@ btnExecute.addEventListener("click", async () => {
     plan = planFromGoal(goal);
     logAction({ message: "Plan from heuristics" }, "info");
   }
+  const strictLoginPlan = buildStrictLoginPlan(goal);
+  if (strictLoginPlan?.length) {
+    plan = strictLoginPlan;
+    logAction(
+      {
+        message:
+          "Applied strict login execution flow (navigate, snapshot, fill email, fill password, click login).",
+      },
+      "info",
+    );
+  }
   plan = ensurePlanStepActionIds(plan);
   currentPlan = plan;
   currentStructuredRun = buildStructuredRun(goal, plan, apiKeyOverride);
@@ -1685,15 +1712,29 @@ btnExecute.addEventListener("click", async () => {
       plan,
       selectedMode,
     );
-    if (!runResult?.ok) {
+    if (!runResult?.ok || runResult?.state === "failed") {
       updateCurrentRun((run) => {
         run.result = {
           status: "failed",
-          message: String(runResult?.error || "Execution failed"),
+          message: String(
+            runResult?.error ||
+              (runResult?.state === "failed"
+                ? "Execution failed during verification."
+                : "Execution failed"),
+          ),
         };
         return run;
       });
-      logAction({ error: runResult?.error || "Execution failed" }, "error");
+      logAction(
+        {
+          error:
+            runResult?.error ||
+            (runResult?.state === "failed"
+              ? "Execution failed during verification."
+              : "Execution failed"),
+        },
+        "error",
+      );
       setState("failed");
     }
     await persistGoalToProject();
@@ -1879,6 +1920,14 @@ function planFromGoal(goal) {
     action: { id: id(), type: "fill", selector, text, submit },
     requiresApproval: false,
   });
+  const click = (selector) => ({
+    action: { id: id(), type: "click", selector },
+    requiresApproval: false,
+  });
+  const snapshot = () => ({
+    action: { id: id(), type: "screenshot" },
+    requiresApproval: false,
+  });
 
   // Extract the search query by stripping site/action keywords
   const extractQuery = (keywords) => {
@@ -1906,9 +1955,14 @@ function planFromGoal(goal) {
     if (query) {
       return [
         navigate("https://www.youtube.com"),
+        snapshot(),
         typeIn(
           'input#search-input, ytd-searchbox input, input[name="search_query"], input[aria-label*="Search" i]',
           query,
+          false,
+        ),
+        click(
+          '#search-icon-legacy button, button[aria-label*="Search" i], #search-icon-legacy',
         ),
       ];
     }
@@ -1982,7 +2036,7 @@ function planFromGoal(goal) {
     return [navigate("https://github.com")];
   }
 
-  // Bare "open/go to/visit <site>" — extract a URL-shaped word
+  // Bare "open/go to/visit <site>" - extract a URL-shaped word
   const openMatch = lower.match(
     /(?:open|visit|go to|navigate to)\s+([\w.-]+\.\w{2,})/i,
   );
@@ -2017,16 +2071,79 @@ function planFromGoal(goal) {
   ];
 }
 
+function buildStrictLoginPlan(goal) {
+  const lower = String(goal || "").toLowerCase();
+  const hasLoginIntent =
+    /login|log in|sign in|password|email/.test(lower) &&
+    /https?:\/\//.test(goal);
+  if (!hasLoginIntent) return null;
+
+  const urlMatch = String(goal || "").match(/https?:\/\/[^\s"']+/i);
+  if (!urlMatch) return null;
+
+  const emailMatch = String(goal || "").match(
+    /email(?:\s*field)?\s*:\s*"([^"]+)"/i,
+  );
+  const passwordMatch = String(goal || "").match(
+    /password(?:\s*field)?\s*:\s*"([^"]+)"/i,
+  );
+  const emailValue = String(emailMatch?.[1] || "").trim();
+  const passwordValue = String(passwordMatch?.[1] || "").trim();
+  if (!emailValue || !passwordValue) return null;
+
+  const id = () => "a-" + Math.random().toString(36).slice(2, 10);
+  return [
+    {
+      action: { id: id(), type: "navigate", url: urlMatch[0] },
+      requiresApproval: false,
+    },
+    {
+      action: { id: id(), type: "screenshot" },
+      requiresApproval: false,
+    },
+    {
+      action: {
+        id: id(),
+        type: "fill",
+        selector:
+          'input[type="email"], input[name*="email" i], input[id*="email" i], input[placeholder*="email" i]',
+        text: emailValue,
+      },
+      requiresApproval: false,
+    },
+    {
+      action: {
+        id: id(),
+        type: "fill",
+        selector:
+          'input[type="password"], input[name*="password" i], input[id*="password" i], input[placeholder*="password" i]',
+        text: passwordValue,
+      },
+      requiresApproval: false,
+    },
+    {
+      action: {
+        id: id(),
+        type: "click",
+        selector:
+          'button:has-text("Log in"), button:has-text("Login"), button:has-text("Sign in"), button[type="submit"], input[type="submit"]',
+      },
+      requiresApproval: false,
+    },
+  ];
+}
+
 function setState(state) {
   if (!statusState) return;
   const labels = {
     idle: "Idle",
-    planning: "Planning…",
-    executing: "Running…",
+    planning: "Planning...",
+    executing: "Running...",
     waiting_approval: "Waiting for approval",
+    verifying: "Verifying...",
     completed: "Done",
     failed: "Failed",
-    recovering: "Recovering…",
+    recovering: "Recovering...",
   };
   statusState.textContent = labels[state] || state;
   statusState.className = "status-value";
@@ -2034,11 +2151,15 @@ function setState(state) {
   if (state === "completed") statusState.classList.remove("status-idle");
   if (state === "failed") statusState.classList.add("disconnected");
   const busy =
-    state === "planning" || state === "executing" || state === "recovering";
+    state === "planning" ||
+    state === "executing" ||
+    state === "recovering" ||
+    state === "verifying" ||
+    state === "waiting_approval";
   if (btnExecute) {
     btnExecute.disabled = busy;
     const textEl = btnExecute.querySelector(".btn-text");
-    const label = busy ? "Running…" : "Run";
+    const label = busy ? "Running..." : "Run";
     if (textEl) textEl.textContent = label;
     else btnExecute.textContent = label;
   }

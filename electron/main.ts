@@ -36,7 +36,7 @@ const SIDEBAR_COLLAPSED = 56;
 const BROWSER_PARTITION_PREFIX = "persist:openbrowser:";
 const DEFAULT_PROFILE_ID = "default";
 const DEFAULT_PROFILE_NAME = "Default";
-const DEFAULT_EXECUTOR_MODE = "browserview";
+const DEFAULT_EXECUTOR_MODE = "playwright";
 const DEFAULT_CDP_PORT = 9339;
 /* Match browser toolbar footprint (toolbar block + vertical margins). */
 const URL_BAR_HEIGHT = 84;
@@ -593,6 +593,36 @@ type ExecutionPlanStep = {
   requiresApproval?: boolean;
 };
 
+async function summarizeBrowserViewPage(): Promise<string | null> {
+  if (!browserView?.webContents) return null;
+  try {
+    const payload = (await browserView.webContents.executeJavaScript(`
+      (() => {
+        const normalize = (v) => (v || "").replace(/\\s+/g, " ").trim();
+        const title = normalize(document.title || "");
+        const url = String(location.href || "");
+        const headings = Array.from(document.querySelectorAll("h1, h2, h3"))
+          .map((el) => normalize(el.textContent || ""))
+          .filter(Boolean)
+          .slice(0, 8);
+        return { title, url, headings };
+      })();
+    `)) as { title?: string; url?: string; headings?: string[] };
+
+    const lines: string[] = [];
+    lines.push("Done! Execution completed.");
+    if (payload?.title) lines.push(`Title: ${payload.title}`);
+    if (payload?.url) lines.push(`URL: ${payload.url}`);
+    if (Array.isArray(payload?.headings) && payload.headings.length) {
+      lines.push("Top page headings:");
+      payload.headings.forEach((heading) => lines.push(`- ${heading}`));
+    }
+    return lines.join("\n");
+  } catch {
+    return null;
+  }
+}
+
 async function runExecutionPlan(
   sender: Electron.WebContents,
   goal: string,
@@ -600,6 +630,7 @@ async function runExecutionPlan(
   modeOverride?: unknown,
 ) {
   const selectedMode = resolveExecutorMode(modeOverride);
+  let activeMode: ExecutorMode = selectedMode;
   const currentUrl =
     browserView?.webContents?.getURL() || "https://www.google.com";
 
@@ -636,25 +667,38 @@ async function runExecutionPlan(
       const launchHint = /connect over CDP|CDP|attachable page/i.test(msg)
         ? ` Playwright could not attach to the existing OpenBrowser Chromium session at ${cdpEndpointUrl}. Restart the app and try again.`
         : "";
-      sendExecutorState(sender, "failed");
-      sendExecutorTrace(sender, {
-        timestamp: Date.now(),
-        state: "failed",
-        message: `Playwright bootstrap failed: ${msg}${launchHint}`,
-      });
-      return {
-        ok: false,
-        error: `${msg}${launchHint}`,
-        state: "failed",
-        trace: [],
-      };
+      if (browserView?.webContents) {
+        activeMode = "browserview";
+        playwrightSession = null;
+        sendExecutorTrace(sender, {
+          timestamp: Date.now(),
+          state: "recovering",
+          message: `Playwright bootstrap failed: ${msg}${launchHint} Falling back to BrowserView executor.`,
+        });
+      } else {
+        sendExecutorState(sender, "failed");
+        sendExecutorTrace(sender, {
+          timestamp: Date.now(),
+          state: "failed",
+          message: `Playwright bootstrap failed: ${msg}${launchHint}`,
+        });
+        return {
+          ok: false,
+          error: `${msg}${launchHint}`,
+          state: "failed",
+          trace: [],
+        };
+      }
     }
   }
 
   sendExecutorTrace(sender, {
     timestamp: Date.now(),
     state: "executing",
-    message: `Executor mode: ${selectedMode}`,
+    message:
+      activeMode === selectedMode
+        ? `Executor mode: ${activeMode}`
+        : `Executor mode: ${activeMode} (preferred: ${selectedMode})`,
   });
 
   const executor = new Executor({
@@ -665,7 +709,7 @@ async function runExecutionPlan(
       resolve(approved);
     },
     executeAction: async (action) => {
-      if (selectedMode === "playwright") {
+      if (activeMode === "playwright") {
         if (!playwrightSession) {
           return {
             actionId: action.id,
@@ -718,11 +762,30 @@ async function runExecutionPlan(
 
   try {
     await executor.run(goal, plan);
+    const finalState = executor.getState();
+    let executionSummary: string | null = null;
+    if (activeMode === "playwright" && playwrightSession) {
+      executionSummary = await playwrightSession.summarizePage(10);
+    } else {
+      executionSummary = await summarizeBrowserViewPage();
+    }
+    if (executionSummary && finalState === "failed") {
+      executionSummary = `Execution ended with verification failure.\n${executionSummary}`;
+    }
+    if (executionSummary) {
+      sendExecutorTrace(sender, {
+        timestamp: Date.now(),
+        state: finalState,
+        message: `Execution summary:\n${executionSummary}`,
+      });
+    }
     return {
       ok: true,
-      mode: selectedMode,
-      state: executor.getState(),
+      mode: activeMode,
+      preferredMode: selectedMode,
+      state: finalState,
       trace: executor.getTrace(),
+      summary: executionSummary,
     };
   } catch (err) {
     sendExecutorState(sender, "failed");
@@ -734,7 +797,8 @@ async function runExecutionPlan(
     return {
       ok: false,
       error: String((err as Error)?.message || err),
-      mode: selectedMode,
+      mode: activeMode,
+      preferredMode: selectedMode,
       state: "failed",
       trace: executor.getTrace(),
     };

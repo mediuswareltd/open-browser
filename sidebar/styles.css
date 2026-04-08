@@ -930,6 +930,11 @@ body {
   color: var(--text);
 }
 
+.structured-step-row.narrative {
+  border-left: 2px solid #c7dbff;
+  padding-left: 10px;
+}
+
 .structured-step-row.failed .structured-step-dot {
   background: var(--error);
 }
