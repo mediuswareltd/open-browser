@@ -8,7 +8,6 @@
   padding: 0;
 }
 
-/* Monochromatic theme (shadcn-style zinc) */
 :root {
   --sidebar-w: 320px;
   --sidebar-collapsed-w: 52px;
@@ -56,6 +55,114 @@ body {
   width: 100%;
   height: 100vh;
   min-width: 0;
+}
+
+#app-shell[hidden],
+.setup-screen[hidden] {
+  display: none !important;
+}
+
+.setup-screen {
+  width: 100%;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.setup-card {
+  width: 100%;
+  max-width: 420px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-sidebar);
+  padding: var(--space-lg);
+}
+
+.setup-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 12px;
+}
+
+.setup-error {
+  font-size: 0.8rem;
+  color: var(--error);
+  margin-top: 2px;
+}
+
+.api-key-field {
+  position: relative;
+  width: 100%;
+}
+
+.api-key-field .api-key-input {
+  padding-right: 42px;
+}
+
+.api-key-toggle {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.api-key-toggle:hover {
+  color: var(--text-secondary);
+  background: var(--bg-elevated);
+}
+
+.api-key-toggle:focus-visible {
+  outline: none;
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 2px var(--ring);
+}
+
+.api-key-eye {
+  position: relative;
+  width: 14px;
+  height: 8px;
+  border: 1.5px solid currentColor;
+  border-radius: 10px / 6px;
+}
+
+.api-key-eye::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  transform: translate(-50%, -50%);
+}
+
+.api-key-eye::before {
+  content: "";
+  position: absolute;
+  left: -3px;
+  top: 3px;
+  width: 19px;
+  height: 1.5px;
+  background: currentColor;
+  transform: rotate(-30deg);
+}
+
+.api-key-toggle.is-visible .api-key-eye::before {
+  content: none;
 }
 
 /* ——— Sidebar ——— */
@@ -135,7 +242,7 @@ body {
   padding: 0;
   margin: -1px;
   overflow: hidden;
-  clip: rect(0,0,0,0);
+  clip: rect(0, 0, 0, 0);
   border: 0;
 }
 
@@ -225,7 +332,10 @@ body {
   border-radius: 999px;
   color: var(--text-secondary);
   cursor: pointer;
-  transition: border-color 0.15s, color 0.15s, background 0.15s;
+  transition:
+    border-color 0.15s,
+    color 0.15s,
+    background 0.15s;
 }
 
 .example-chip:hover {
@@ -358,7 +468,9 @@ body {
   resize: vertical;
   min-height: 68px;
   max-height: 140px;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
 }
 
 #goal-input::placeholder {
@@ -389,8 +501,28 @@ body {
   font-family: var(--font);
   font-size: 0.875rem;
   height: 40px;
+  transition:
+    border-color 0.15s,
+    background-color 0.15s,
+    box-shadow 0.15s;
+}
+
+.ai-provider-select {
   cursor: pointer;
-  transition: border-color 0.15s;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  padding-right: 36px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
+    linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
+  background-position:
+    calc(100% - 16px) 17px,
+    calc(100% - 11px) 17px;
+  background-size:
+    5px 5px,
+    5px 5px;
+  background-repeat: no-repeat;
 }
 
 .api-key-input {
@@ -401,6 +533,24 @@ body {
 .api-key-input:focus {
   outline: none;
   border-color: var(--border-focus);
+  box-shadow: 0 0 0 2px var(--ring);
+}
+
+.ai-provider-select:hover {
+  border-color: var(--border-focus);
+  background-color: var(--bg-elevated);
+}
+
+.ai-provider-select:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.ai-provider-select-option {
+  background: var(--bg-input);
+  color: var(--text);
+  height: 40px;
+  padding: 10px 12px;
 }
 
 .execute-buttons {
@@ -422,7 +572,9 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.15s, opacity 0.15s;
+  transition:
+    background 0.15s,
+    opacity 0.15s;
 }
 
 .btn-primary {
@@ -718,8 +870,96 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
   font-size: 0.75rem;
   color: var(--text-muted);
+  position: relative;
+}
+
+.footer-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-settings {
+  padding-left: 10px;
+  padding-right: 10px;
+}
+
+.settings-menu {
+  position: relative;
+  margin-left: auto;
+}
+
+.settings-panel {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  width: 280px;
+  max-width: 280px;
+  background: var(--bg-sidebar);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+  z-index: 20;
+}
+
+.settings-panel[hidden] {
+  display: none !important;
+}
+
+.settings-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+
+.settings-label {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.settings-label:not(:first-of-type) {
+  margin-top: 10px;
+}
+
+.settings-actions {
+  margin-top: 12px;
+  display: flex;
+}
+
+.settings-actions .btn-primary {
+  width: 100%;
+}
+
+.settings-message {
+  margin-top: 8px;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.settings-message.error {
+  color: var(--error);
+}
+
+.settings-message.success {
+  color: var(--text-secondary);
+}
+
+.settings-footer-actions {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  display: flex;
+}
+
+.settings-footer-actions .btn-secondary {
+  width: 100%;
 }
 
 /* Browser area */
@@ -774,7 +1014,9 @@ body {
   color: var(--text);
   font-family: var(--font);
   font-size: 0.875rem;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
 }
 
 .url-bar::placeholder {
@@ -803,7 +1045,9 @@ body {
   font-size: 0.875rem;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
 }
 
 .btn-go:hover {

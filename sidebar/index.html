@@ -10,7 +10,33 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <div class="layout">
+  <div id="setup-screen" class="setup-screen">
+    <section class="setup-card">
+      <h2 class="setup-title">Select Planner</h2>
+      <div class="provider-row">
+        <label for="setup-planner-select" class="sr-only">Select Planner</label>
+        <select id="setup-planner-select" class="ai-provider-select" title="Select planner">
+          <option class="ai-provider-select-option" value="heuristic" disabled>Quick (heuristic, no API key needed)</option>
+          <option class="ai-provider-select-option" value="gemini" selected>Gemini</option>
+          <option class="ai-provider-select-option" value="ollama" disabled>Ollama</option>
+        </select>
+        <div id="setup-api-key-field" class="api-key-field">
+          <input type="password" id="setup-api-key-input" class="api-key-input" placeholder="Gemini API key" autocomplete="off" title="Gemini API key" />
+          <button type="button" id="btn-setup-api-key-visibility" class="api-key-toggle" aria-label="Show API key" title="Show API key">
+            <span class="api-key-eye" aria-hidden="true"></span>
+          </button>
+        </div>
+        <p id="setup-error" class="setup-error" hidden>Invalid Gemini API key</p>
+      </div>
+      <div class="execute-buttons">
+        <button id="btn-setup-continue" class="btn-primary">
+          <span class="btn-text">Continue</span>
+        </button>
+      </div>
+    </section>
+  </div>
+
+  <div id="app-shell" class="layout" hidden>
     <aside id="sidebar" class="sidebar" role="complementary">
       <button type="button" id="sidebar-toggle" class="sidebar-toggle" aria-label="Toggle sidebar" title="Toggle sidebar">
         <span class="sidebar-toggle-icon" aria-hidden="true">◀</span>
@@ -60,12 +86,12 @@
           <div class="provider-row">
             <label for="ai-provider-select" class="sr-only">Model</label>
             <select id="ai-provider-select" class="ai-provider-select" title="Planning model">
-              <option value="heuristic">Quick (no AI)</option>
+              <!-- <option value="heuristic">Quick (no AI)</option> -->
               <option value="gemini">Gemini</option>
-              <option value="ollama">Ollama</option>
+              <!-- <option value="ollama">Ollama</option> -->
             </select>
-            <input type="password" id="api-key-input" class="api-key-input" placeholder="API key (optional)" autocomplete="off" title="Override API key from .env" />
-            <span id="api-key-label" class="sr-only">API key</span>
+            <!-- <input type="password" id="api-key-input" class="api-key-input" placeholder="API key (optional)" autocomplete="off" title="Override API key from .env" />
+            <span id="api-key-label" class="sr-only">API key</span> -->
           </div>
           <div class="execute-buttons">
             <button id="btn-execute" class="btn-primary">
@@ -100,8 +126,38 @@
       </div>
 
       <footer class="sidebar-footer">
-        <span class="footer-text">OpenBrowser</span>
-        <span class="footer-version">v0.1.0</span>
+        <div class="footer-meta">
+          <span class="footer-text">OpenBrowser</span>
+          <span class="footer-version">v0.1.0</span>
+        </div>
+        <div id="settings-menu" class="settings-menu">
+          <button type="button" id="btn-settings" class="btn-secondary btn-sm btn-settings">⚙ Settings</button>
+          <div id="settings-panel" class="settings-panel" hidden>
+            <h3 class="settings-title">Settings</h3>
+            <label for="settings-provider-select" class="settings-label">AI Provider</label>
+            <select id="settings-provider-select" class="ai-provider-select" title="AI provider">
+              <option value="heuristic" disabled>Quick (heuristic, no API key needed)</option>
+              <option value="gemini" selected>Gemini</option>
+              <option value="ollama" disabled>Ollama</option>
+            </select>
+            <label for="settings-api-key-input" class="settings-label">Gemini API Key</label>
+            <div id="settings-api-key-field" class="api-key-field">
+              <input type="password" id="settings-api-key-input" class="api-key-input" placeholder="Gemini API key" autocomplete="off" />
+              <button type="button" id="btn-settings-api-key-visibility" class="api-key-toggle" aria-label="Show API key" title="Show API key">
+                <span class="api-key-eye" aria-hidden="true"></span>
+              </button>
+            </div>
+            <label for="settings-model-select" class="settings-label">Models</label>
+            <select id="settings-model-select" class="ai-provider-select" title="Gemini model"></select>
+            <div class="settings-actions">
+              <button type="button" id="btn-settings-change-key" class="btn-primary btn-sm">Change Key</button>
+            </div>
+            <p id="settings-message" class="settings-message" hidden></p>
+            <div class="settings-footer-actions">
+              <button type="button" id="btn-settings-remove-key" class="btn-secondary btn-sm">Remove API Key</button>
+            </div>
+          </div>
+        </div>
       </footer>
       </div>
     </aside>

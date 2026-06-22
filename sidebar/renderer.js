@@ -25,12 +25,37 @@ const welcomeBlock = document.getElementById("welcome-block");
 const btnDismissWelcome = document.getElementById("btn-dismiss-welcome");
 const actionLogEmpty = document.getElementById("action-log-empty");
 const projectsPrompt = document.getElementById("projects-prompt");
+const setupScreen = document.getElementById("setup-screen");
+const appShell = document.getElementById("app-shell");
+const setupPlannerSelect = document.getElementById("setup-planner-select");
+const setupApiKeyField = document.getElementById("setup-api-key-field");
+const setupApiKeyInput = document.getElementById("setup-api-key-input");
+const btnSetupApiKeyVisibility = document.getElementById(
+  "btn-setup-api-key-visibility",
+);
+const btnSetupContinue = document.getElementById("btn-setup-continue");
+const setupError = document.getElementById("setup-error");
 const viewProjects = document.getElementById("view-projects");
 const viewProjectDetail = document.getElementById("view-project-detail");
 const btnBackToProjects = document.getElementById("btn-back-to-projects");
 const projectDetailName = document.getElementById("project-detail-name");
 const sidebar = document.getElementById("sidebar");
 const sidebarToggle = document.getElementById("sidebar-toggle");
+const settingsMenu = document.getElementById("settings-menu");
+const btnSettings = document.getElementById("btn-settings");
+const settingsPanel = document.getElementById("settings-panel");
+const settingsProviderSelect = document.getElementById(
+  "settings-provider-select",
+);
+const settingsApiKeyField = document.getElementById("settings-api-key-field");
+const settingsApiKeyInput = document.getElementById("settings-api-key-input");
+const btnSettingsApiKeyVisibility = document.getElementById(
+  "btn-settings-api-key-visibility",
+);
+const settingsModelSelect = document.getElementById("settings-model-select");
+const btnSettingsChangeKey = document.getElementById("btn-settings-change-key");
+const btnSettingsRemoveKey = document.getElementById("btn-settings-remove-key");
+const settingsMessage = document.getElementById("settings-message");
 
 const WELCOME_DISMISSED_KEY = "openbrowser-welcome-dismissed";
 const SIDEBAR_COLLAPSED_KEY = "openbrowser-sidebar-collapsed";
@@ -43,6 +68,8 @@ let pendingApproval = null;
 let currentProjectId = null;
 let currentPlan = [];
 let actionTrace = [];
+let currentAiModel = "gemini-2.5-flash";
+let aiProviderSelectBound = false;
 
 async function init() {
   if (window.openBrowser) {
@@ -50,8 +77,10 @@ async function init() {
       bridgePort = await window.openBrowser.getBridgePort();
       console.log("[OpenBrowser] Bridge port:", bridgePort);
       const cfg = await window.openBrowser.getAiConfig?.();
-      if (cfg) setupAiProviderSelect(cfg);
-
+      if (cfg) {
+        currentAiModel = cfg.model || currentAiModel;
+        setupAiProviderSelect(cfg);
+      }
     } catch (e) {
       console.warn("[OpenBrowser] init:", e);
     }
@@ -63,14 +92,19 @@ async function init() {
   setupWelcome();
   setupSidebarToggle();
   setupViewSwitching();
+  setupApiKeyVisibilityToggles();
+  await setupSetupScreen();
+  setupSettingsMenu();
   setupKeyboardShortcuts();
   refreshProjectList();
-  if (localStorage.getItem(WELCOME_DISMISSED_KEY)) welcomeBlock?.classList.add("hidden");
+  if (localStorage.getItem(WELCOME_DISMISSED_KEY))
+    welcomeBlock?.classList.add("hidden");
   const collapsed = localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1";
   if (collapsed && sidebar) {
     sidebar.classList.add("collapsed");
     try {
-      if (window.openBrowser?.setSidebarWidth) await window.openBrowser.setSidebarWidth(SIDEBAR_WIDTH_COLLAPSED);
+      if (window.openBrowser?.setSidebarWidth)
+        await window.openBrowser.setSidebarWidth(SIDEBAR_WIDTH_COLLAPSED);
     } catch (_) {}
     if (sidebarToggle) {
       sidebarToggle.setAttribute("aria-label", "Expand sidebar");
@@ -83,10 +117,11 @@ async function init() {
 
 function setupWelcome() {
   const dismissBtn = document.getElementById("btn-dismiss-welcome");
-  if (dismissBtn) dismissBtn.addEventListener("click", () => {
-    localStorage.setItem(WELCOME_DISMISSED_KEY, "1");
-    welcomeBlock?.classList.add("hidden");
-  });
+  if (dismissBtn)
+    dismissBtn.addEventListener("click", () => {
+      localStorage.setItem(WELCOME_DISMISSED_KEY, "1");
+      welcomeBlock?.classList.add("hidden");
+    });
 }
 
 function setupSidebarToggle() {
@@ -95,10 +130,14 @@ function setupSidebarToggle() {
     const collapsed = sidebar.classList.toggle("collapsed");
     const width = collapsed ? SIDEBAR_WIDTH_COLLAPSED : SIDEBAR_WIDTH_EXPANDED;
     try {
-      if (window.openBrowser?.setSidebarWidth) window.openBrowser.setSidebarWidth(width);
+      if (window.openBrowser?.setSidebarWidth)
+        window.openBrowser.setSidebarWidth(width);
     } catch (_) {}
     localStorage.setItem(SIDEBAR_COLLAPSED_KEY, collapsed ? "1" : "0");
-    sidebarToggle.setAttribute("aria-label", collapsed ? "Expand sidebar" : "Collapse sidebar");
+    sidebarToggle.setAttribute(
+      "aria-label",
+      collapsed ? "Expand sidebar" : "Collapse sidebar",
+    );
     sidebarToggle.title = collapsed ? "Expand sidebar" : "Collapse sidebar";
     const icon = sidebarToggle.querySelector(".sidebar-toggle-icon");
     if (icon) icon.textContent = collapsed ? "▶" : "◀";
@@ -116,12 +155,229 @@ function showProjectsView() {
 function showProjectDetailView() {
   if (viewProjects) viewProjects.hidden = true;
   if (viewProjectDetail) viewProjectDetail.hidden = false;
-  if (projectDetailName) projectDetailName.textContent = projectNameInput?.value?.trim() || "Project";
+  if (projectDetailName)
+    projectDetailName.textContent =
+      projectNameInput?.value?.trim() || "Project";
 }
 
 function setupViewSwitching() {
   btnBackToProjects?.addEventListener("click", () => {
     showProjectsView();
+  });
+}
+
+function setSetupError(message = "") {
+  if (!setupError) return;
+  setupError.textContent = message || "Invalid Gemini API key";
+  setupError.hidden = !message;
+}
+
+function setSettingsMessage(message = "", kind = "") {
+  if (!settingsMessage) return;
+  settingsMessage.textContent = message;
+  settingsMessage.className = "settings-message" + (kind ? ` ${kind}` : "");
+  settingsMessage.hidden = !message;
+}
+
+function setApiKeyInputVisibility(inputEl, buttonEl, visible) {
+  if (!inputEl || !buttonEl) return;
+  inputEl.type = visible ? "text" : "password";
+  buttonEl.classList.toggle("is-visible", visible);
+  const label = visible ? "Hide API key" : "Show API key";
+  buttonEl.setAttribute("aria-label", label);
+  buttonEl.title = label;
+}
+
+function setupApiKeyVisibilityToggles() {
+  setApiKeyInputVisibility(setupApiKeyInput, btnSetupApiKeyVisibility, false);
+  setApiKeyInputVisibility(
+    settingsApiKeyInput,
+    btnSettingsApiKeyVisibility,
+    false,
+  );
+
+  btnSetupApiKeyVisibility?.addEventListener("click", () => {
+    const visible = setupApiKeyInput?.type === "password";
+    setApiKeyInputVisibility(
+      setupApiKeyInput,
+      btnSetupApiKeyVisibility,
+      visible,
+    );
+  });
+
+  btnSettingsApiKeyVisibility?.addEventListener("click", () => {
+    const visible = settingsApiKeyInput?.type === "password";
+    setApiKeyInputVisibility(
+      settingsApiKeyInput,
+      btnSettingsApiKeyVisibility,
+      visible,
+    );
+  });
+}
+
+async function populateSettingsModels(apiKey = "", selectedModel = "") {
+  if (!settingsModelSelect) return;
+  settingsModelSelect.innerHTML = "";
+  let models = [];
+  try {
+    models = await window.openBrowser?.listGeminiModels?.(apiKey);
+  } catch (_) {}
+  const options =
+    Array.isArray(models) && models.length
+      ? models
+      : [selectedModel || currentAiModel];
+  options.forEach((m) => {
+    const opt = document.createElement("option");
+    opt.value = m;
+    opt.textContent = m;
+    settingsModelSelect.appendChild(opt);
+  });
+  const target =
+    selectedModel && options.includes(selectedModel)
+      ? selectedModel
+      : options[0];
+  settingsModelSelect.value = target || currentAiModel;
+}
+
+function applyAiConfigToUi(config) {
+  if (!config) return;
+  currentAiModel = config.model || currentAiModel;
+  const provider = config.aiProvider || "gemini";
+  const geminiKey = config.geminiApiKey || "";
+  if (setupPlannerSelect) setupPlannerSelect.value = provider;
+  if (setupApiKeyInput) setupApiKeyInput.value = geminiKey;
+  if (aiProviderSelect) {
+    aiProviderSelect.value = provider;
+    aiProviderSelect.dispatchEvent(new Event("change"));
+  }
+  if (apiKeyInput) apiKeyInput.value = geminiKey;
+}
+
+async function showMainInterface() {
+  try {
+    await window.openBrowser?.startMainInterface?.();
+  } catch (e) {
+    console.warn("[OpenBrowser] startMainInterface:", e);
+  }
+  if (setupScreen) setupScreen.hidden = true;
+  if (appShell) appShell.hidden = false;
+  showProjectsView();
+}
+
+function setupSettingsMenu() {
+  btnSettings?.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    if (!settingsPanel) return;
+    const opening = settingsPanel.hidden;
+    settingsPanel.hidden = !settingsPanel.hidden;
+    if (!opening) return;
+    if (settingsProviderSelect)
+      settingsProviderSelect.value = aiProviderSelect?.value || "gemini";
+    if (settingsApiKeyField) settingsApiKeyField.style.display = "";
+    if (settingsApiKeyInput) {
+      settingsApiKeyInput.value = (
+        apiKeyInput?.value ||
+        setupApiKeyInput?.value ||
+        ""
+      ).trim();
+    }
+    setApiKeyInputVisibility(
+      settingsApiKeyInput,
+      btnSettingsApiKeyVisibility,
+      false,
+    );
+    await populateSettingsModels(
+      settingsApiKeyInput?.value?.trim() || "",
+      currentAiModel,
+    );
+    setSettingsMessage("");
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!settingsPanel || settingsPanel.hidden) return;
+    if (!settingsMenu?.contains(e.target)) settingsPanel.hidden = true;
+  });
+
+  btnSettingsChangeKey?.addEventListener("click", async () => {
+    const provider = settingsProviderSelect?.value || "gemini";
+    const geminiApiKey = settingsApiKeyInput?.value?.trim() || "";
+    const model = settingsModelSelect?.value || currentAiModel;
+    const result = await window.openBrowser?.verifyAndSaveAiConfig?.({
+      aiProvider: provider,
+      geminiApiKey,
+      model,
+    });
+    if (!result?.ok) {
+      setSettingsMessage("Invalid Gemini API key", "error");
+      return;
+    }
+    const cfg = await window.openBrowser?.getAiConfig?.();
+    if (cfg) {
+      currentAiModel = cfg.model || currentAiModel;
+      setupAiProviderSelect(cfg);
+    }
+    applyAiConfigToUi(result.config);
+    setSettingsMessage("Saved", "success");
+  });
+
+  btnSettingsRemoveKey?.addEventListener("click", async () => {
+    try {
+      await window.openBrowser?.clearAiConfigAndReset?.();
+    } catch (e) {
+      setSettingsMessage("Failed to remove API key", "error");
+      return;
+    }
+    if (settingsPanel) settingsPanel.hidden = true;
+    window.location.reload();
+  });
+}
+
+async function setupSetupScreen() {
+  if (appShell) appShell.hidden = true;
+  const refreshSetupApiKeyInput = () => {
+    const visible = setupPlannerSelect?.value === "gemini";
+    if (setupApiKeyField)
+      setupApiKeyField.style.display = visible ? "" : "none";
+    else if (setupApiKeyInput)
+      setupApiKeyInput.style.display = visible ? "" : "none";
+  };
+  refreshSetupApiKeyInput();
+  setupPlannerSelect?.addEventListener("change", refreshSetupApiKeyInput);
+  setSetupError("");
+
+  const saved = await window.openBrowser?.getSavedAiConfig?.();
+  if (saved?.hasConfig && saved?.config) {
+    applyAiConfigToUi(saved.config);
+    const cfg = await window.openBrowser?.getAiConfig?.();
+    if (cfg) {
+      currentAiModel = cfg.model || currentAiModel;
+      setupAiProviderSelect(cfg);
+    }
+    await showMainInterface();
+    return;
+  }
+
+  if (setupScreen) setupScreen.hidden = false;
+  btnSetupContinue?.addEventListener("click", async () => {
+    const provider = setupPlannerSelect?.value || "gemini";
+    const geminiApiKey = setupApiKeyInput?.value?.trim() || "";
+    const result = await window.openBrowser?.verifyAndSaveAiConfig?.({
+      aiProvider: provider,
+      geminiApiKey,
+      model: currentAiModel,
+    });
+    if (!result?.ok) {
+      setSetupError("Invalid Gemini API key");
+      return;
+    }
+    setSetupError("");
+    const cfg = await window.openBrowser?.getAiConfig?.();
+    if (cfg) {
+      currentAiModel = cfg.model || currentAiModel;
+      setupAiProviderSelect(cfg);
+    }
+    applyAiConfigToUi(result.config);
+    await showMainInterface();
   });
 }
 
@@ -149,11 +405,15 @@ function setupAiProviderSelect(cfg) {
     if (p === cfg.provider) opt.selected = true;
     aiProviderSelect.appendChild(opt);
   });
-  aiProviderSelect.addEventListener("change", () => {
-    const p = aiProviderSelect.value;
-    if (apiKeyInput) apiKeyInput.style.display = p === "gemini" ? "" : "none";
-  });
-  if (apiKeyInput) apiKeyInput.style.display = cfg.provider === "gemini" ? "" : "none";
+  if (!aiProviderSelectBound) {
+    aiProviderSelect.addEventListener("change", () => {
+      const p = aiProviderSelect.value;
+      if (apiKeyInput) apiKeyInput.style.display = p === "gemini" ? "" : "none";
+    });
+    aiProviderSelectBound = true;
+  }
+  if (apiKeyInput)
+    apiKeyInput.style.display = cfg.provider === "gemini" ? "" : "none";
 }
 
 function connectToBridge() {
@@ -209,7 +469,8 @@ function navigateBrowser(url) {
 
 btnGo.addEventListener("click", () => {
   let url = urlBar.value.trim();
-  if (!url.startsWith("http")) url = "https://www.google.com/search?q=" + encodeURIComponent(url);
+  if (!url.startsWith("http"))
+    url = "https://www.google.com/search?q=" + encodeURIComponent(url);
   navigateBrowser(url);
 });
 
@@ -226,8 +487,13 @@ btnExecute.addEventListener("click", async () => {
   const apiKeyOverride = apiKeyInput?.value?.trim();
   if (provider !== "heuristic" && window.openBrowser?.plan) {
     try {
-      plan = await window.openBrowser.plan(goal, provider, apiKeyOverride || undefined);
-      if (plan?.length) logAction({ message: `Plan from ${provider}` }, "success");
+      plan = await window.openBrowser.plan(
+        goal,
+        provider,
+        apiKeyOverride || undefined,
+      );
+      if (plan?.length)
+        logAction({ message: `Plan from ${provider}` }, "success");
     } catch (e) {
       logAction({ error: `${provider} failed: ` + (e?.message || e) }, "error");
     }
@@ -250,7 +516,8 @@ btnExecute.addEventListener("click", async () => {
         setState("waiting_approval");
         pendingApproval = step;
         if (approvalSection) approvalSection.hidden = false;
-        if (approvalMessage) approvalMessage.textContent = `Approve: ${step.action.type} on "${step.action.selector || step.action.url || "element"}"?`;
+        if (approvalMessage)
+          approvalMessage.textContent = `Approve: ${step.action.type} on "${step.action.selector || step.action.url || "element"}"?`;
         const approved = await new Promise((resolve) => {
           btnApprove.onclick = () => {
             approvalSection.hidden = true;
@@ -260,7 +527,10 @@ btnExecute.addEventListener("click", async () => {
           btnReject.onclick = () => {
             approvalSection.hidden = true;
             pendingApproval = null;
-            logAction({ actionId: step.action.id, error: "Rejected by user" }, "error");
+            logAction(
+              { actionId: step.action.id, error: "Rejected by user" },
+              "error",
+            );
             resolve(false);
           };
         });
@@ -271,12 +541,29 @@ btnExecute.addEventListener("click", async () => {
         navigateBrowser(step.action.url);
         logAction({ actionId: step.action.id, success: true }, "success");
       } else if (window.openBrowser?.executeActionInBrowser) {
-        const result = await window.openBrowser.executeActionInBrowser(step.action);
-        logAction({ actionId: step.action.id, success: result?.success, error: result?.error }, result?.success ? "success" : "error");
-      } else if (extensionSocket && extensionSocket.readyState === WebSocket.OPEN) {
-        extensionSocket.send(JSON.stringify({ type: "action", payload: step.action }));
+        const result = await window.openBrowser.executeActionInBrowser(
+          step.action,
+        );
+        logAction(
+          {
+            actionId: step.action.id,
+            success: result?.success,
+            error: result?.error,
+          },
+          result?.success ? "success" : "error",
+        );
+      } else if (
+        extensionSocket &&
+        extensionSocket.readyState === WebSocket.OPEN
+      ) {
+        extensionSocket.send(
+          JSON.stringify({ type: "action", payload: step.action }),
+        );
       } else {
-        logAction({ actionId: step.action.id, error: "Cannot execute action" }, "error");
+        logAction(
+          { actionId: step.action.id, error: "Cannot execute action" },
+          "error",
+        );
       }
     }
     setState("completed");
@@ -316,8 +603,17 @@ async function runPlan(plan) {
       navigateBrowser(step.action.url);
       logAction({ actionId: step.action.id, success: true }, "success");
     } else if (window.openBrowser?.executeActionInBrowser) {
-      const result = await window.openBrowser.executeActionInBrowser(step.action);
-      logAction({ actionId: step.action.id, success: result?.success, error: result?.error }, result?.success ? "success" : "error");
+      const result = await window.openBrowser.executeActionInBrowser(
+        step.action,
+      );
+      logAction(
+        {
+          actionId: step.action.id,
+          success: result?.success,
+          error: result?.error,
+        },
+        result?.success ? "success" : "error",
+      );
     }
   }
   setState("completed");
@@ -344,7 +640,8 @@ function setupProjects() {
 async function persistGoalToProject() {
   if (!currentProjectId) return;
   const goal = goalInput?.value?.trim() ?? "";
-  const name = projectNameInput?.value?.trim() || goal?.slice(0, 50) || "Untitled";
+  const name =
+    projectNameInput?.value?.trim() || goal?.slice(0, 50) || "Untitled";
   const provider = aiProviderSelect?.value || "heuristic";
   try {
     await window.openBrowser?.projectsSave?.({
@@ -382,7 +679,8 @@ async function saveProject() {
         if (goalInput) goalInput.value = project.goal || "";
         actionTrace = project.trace || [];
         currentPlan = project.plan || [];
-        while (actionLog?.firstChild) actionLog.removeChild(actionLog.firstChild);
+        while (actionLog?.firstChild)
+          actionLog.removeChild(actionLog.firstChild);
         if (actionTrace?.length) {
           actionTrace.forEach((t) => {
             const el = document.createElement("div");
@@ -434,11 +732,13 @@ async function refreshProjectList() {
   try {
     list = await window.openBrowser?.projectsList?.();
   } catch (e) {
-    projectList.innerHTML = "<div class='project-list-empty'>Error loading projects</div>";
+    projectList.innerHTML =
+      "<div class='project-list-empty'>Error loading projects</div>";
     return;
   }
   if (!list?.length) {
-    projectList.innerHTML = "<div class='project-list-empty'>No saved projects. Enter name above and click Save.</div>";
+    projectList.innerHTML =
+      "<div class='project-list-empty'>No saved projects. Enter name above and click Save.</div>";
     if (projectsPrompt) projectsPrompt.classList.remove("hidden");
     return;
   }
@@ -457,7 +757,9 @@ async function refreshProjectList() {
     del.textContent = "×";
     del.onclick = (e) => {
       e.stopPropagation();
-      window.openBrowser?.projectsDelete?.(p.id).then(() => refreshProjectList());
+      window.openBrowser
+        ?.projectsDelete?.(p.id)
+        .then(() => refreshProjectList());
     };
     item.appendChild(title);
     item.appendChild(del);
@@ -469,25 +771,45 @@ function planFromGoal(goal) {
   const id = () => "a-" + Math.random().toString(36).slice(2, 10);
   const lower = goal.toLowerCase();
 
-  const navigate = (url) => ({ action: { id: id(), type: "navigate", url }, requiresApproval: false });
-  const typeIn = (selector, text, submit = true) => ({ action: { id: id(), type: "fill", selector, text, submit }, requiresApproval: false });
+  const navigate = (url) => ({
+    action: { id: id(), type: "navigate", url },
+    requiresApproval: false,
+  });
+  const typeIn = (selector, text, submit = true) => ({
+    action: { id: id(), type: "fill", selector, text, submit },
+    requiresApproval: false,
+  });
 
   // Extract the search query by stripping site/action keywords
   const extractQuery = (keywords) => {
     let q = lower;
-    keywords.forEach(k => { q = q.replace(k, ""); });
+    keywords.forEach((k) => {
+      q = q.replace(k, "");
+    });
     return q.replace(/['"]/g, "").trim() || goal.trim();
   };
 
   // YouTube
   const ytKeywords = ["youtube", "on youtube", "in youtube"];
-  const isYT = ytKeywords.some(k => lower.includes(k));
+  const isYT = ytKeywords.some((k) => lower.includes(k));
   if (isYT) {
-    const query = extractQuery(["visit", "go to", "open", "youtube", "search", "on", "in", "for"]);
+    const query = extractQuery([
+      "visit",
+      "go to",
+      "open",
+      "youtube",
+      "search",
+      "on",
+      "in",
+      "for",
+    ]);
     if (query) {
       return [
         navigate("https://www.youtube.com"),
-        typeIn('input#search-input, ytd-searchbox input, input[name="search_query"], input[aria-label*="Search" i]', query),
+        typeIn(
+          'input#search-input, ytd-searchbox input, input[name="search_query"], input[aria-label*="Search" i]',
+          query,
+        ),
       ];
     }
     return [navigate("https://www.youtube.com")];
@@ -496,33 +818,74 @@ function planFromGoal(goal) {
   // Bing
   if (lower.includes("bing")) {
     const query = extractQuery(["search", "on bing", "bing", "for", "find"]);
-    if (query) return [navigate("https://www.bing.com/search?q=" + encodeURIComponent(query))];
+    if (query)
+      return [
+        navigate("https://www.bing.com/search?q=" + encodeURIComponent(query)),
+      ];
     return [navigate("https://www.bing.com")];
   }
 
   // Wikipedia
   if (lower.includes("wikipedia")) {
-    const query = extractQuery(["search", "wikipedia", "on", "for", "find", "open", "look up"]);
-    if (query) return [navigate("https://en.wikipedia.org/w/index.php?search=" + encodeURIComponent(query))];
+    const query = extractQuery([
+      "search",
+      "wikipedia",
+      "on",
+      "for",
+      "find",
+      "open",
+      "look up",
+    ]);
+    if (query)
+      return [
+        navigate(
+          "https://en.wikipedia.org/w/index.php?search=" +
+            encodeURIComponent(query),
+        ),
+      ];
     return [navigate("https://en.wikipedia.org")];
   }
 
   // Reddit
   if (lower.includes("reddit")) {
-    const query = extractQuery(["search", "reddit", "on", "for", "find", "open"]);
-    if (query) return [navigate("https://www.reddit.com/search/?q=" + encodeURIComponent(query))];
+    const query = extractQuery([
+      "search",
+      "reddit",
+      "on",
+      "for",
+      "find",
+      "open",
+    ]);
+    if (query)
+      return [
+        navigate(
+          "https://www.reddit.com/search/?q=" + encodeURIComponent(query),
+        ),
+      ];
     return [navigate("https://www.reddit.com")];
   }
 
   // GitHub
   if (lower.includes("github")) {
-    const query = extractQuery(["search", "github", "on", "for", "find", "open"]);
-    if (query) return [navigate("https://github.com/search?q=" + encodeURIComponent(query))];
+    const query = extractQuery([
+      "search",
+      "github",
+      "on",
+      "for",
+      "find",
+      "open",
+    ]);
+    if (query)
+      return [
+        navigate("https://github.com/search?q=" + encodeURIComponent(query)),
+      ];
     return [navigate("https://github.com")];
   }
 
   // Bare "open/go to/visit <site>" — extract a URL-shaped word
-  const openMatch = lower.match(/(?:open|visit|go to|navigate to)\s+([\w.-]+\.\w{2,})/i);
+  const openMatch = lower.match(
+    /(?:open|visit|go to|navigate to)\s+([\w.-]+\.\w{2,})/i,
+  );
   if (openMatch) {
     const site = openMatch[1];
     return [navigate(site.startsWith("http") ? site : "https://" + site)];
@@ -533,9 +896,15 @@ function planFromGoal(goal) {
   if (urlMatch) return [navigate(urlMatch[0])];
 
   // Google search (default)
-  const isSearch = lower.includes("search") || lower.includes("google") || lower.includes("find");
+  const isSearch =
+    lower.includes("search") ||
+    lower.includes("google") ||
+    lower.includes("find");
   if (isSearch) {
-    const query = goal.replace(/^(search for|google|find|search)\s+/i, "").replace(/['"]/g, "").trim();
+    const query = goal
+      .replace(/^(search for|google|find|search)\s+/i, "")
+      .replace(/['"]/g, "")
+      .trim();
     return [
       navigate("https://www.google.com"),
       typeIn('textarea[name="q"], input[name="q"]', query),
@@ -543,18 +912,29 @@ function planFromGoal(goal) {
   }
 
   // Fallback: Google search with the full goal as query
-  return [navigate("https://www.google.com/search?q=" + encodeURIComponent(goal))];
+  return [
+    navigate("https://www.google.com/search?q=" + encodeURIComponent(goal)),
+  ];
 }
 
 function setState(state) {
   if (!statusState) return;
-  const labels = { idle: "Idle", planning: "Planning…", executing: "Running…", waiting_approval: "Waiting for approval", completed: "Done", failed: "Failed", recovering: "Recovering…" };
+  const labels = {
+    idle: "Idle",
+    planning: "Planning…",
+    executing: "Running…",
+    waiting_approval: "Waiting for approval",
+    completed: "Done",
+    failed: "Failed",
+    recovering: "Recovering…",
+  };
   statusState.textContent = labels[state] || state;
   statusState.className = "status-value";
   if (state === "idle") statusState.classList.add("status-idle");
   if (state === "completed") statusState.classList.remove("status-idle");
   if (state === "failed") statusState.classList.add("disconnected");
-  const busy = state === "planning" || state === "executing" || state === "recovering";
+  const busy =
+    state === "planning" || state === "executing" || state === "recovering";
   if (btnExecute) {
     btnExecute.disabled = busy;
     const textEl = btnExecute.querySelector(".btn-text");
@@ -566,7 +946,10 @@ function setState(state) {
 
 function logAction(result, kind = "info") {
   actionLogEmpty?.classList.add("hidden");
-  const msg = result.message || result.error || `${result.action?.type || "?"} ${result.success !== undefined ? (result.success ? "ok" : "failed") : ""}`;
+  const msg =
+    result.message ||
+    result.error ||
+    `${result.action?.type || "?"} ${result.success !== undefined ? (result.success ? "ok" : "failed") : ""}`;
   const time = new Date().toLocaleTimeString();
   actionTrace.push({ time, msg, kind });
   const el = document.createElement("div");
