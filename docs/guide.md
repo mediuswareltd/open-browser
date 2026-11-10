@@ -4,10 +4,6 @@ Describe a goal in plain language; OpenBrowser plans and executes steps in a rea
 
 ](https://mediuswareltd.github.io/open-browser/)
 
-<p align="center">
-  <img src="arts/open-browser.png" alt="OpenBrowser" width="320" />
-</p>
-
 **OpenBrowser** — AI-powered browser automation. Describe your goal in plain language; OpenBrowser plans and executes the steps inside a real Chromium browser. It supports a fast rule-based planner out of the box, and optional AI planners (Gemini, Ollama) for complex goals.
 
 ---
