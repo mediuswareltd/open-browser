@@ -15,6 +15,7 @@ Run **OpenBrowser** on your machine.
 
 ---
 
+
 ## 2. Usage
 
 1. **Launch** — The app opens with a sidebar (left) and a browser panel (right).
@@ -39,6 +40,7 @@ Actions can be flagged `requiresApproval: true` in the plan. When triggered, the
 
 ---
 
+
 ## 3. Quick start
 
 ```bash
@@ -62,6 +64,7 @@ npm run dev
 
 ---
 
+
 ## 4. Requirements
 
 - **Node.js** 18+
@@ -70,6 +73,7 @@ npm run dev
 - Or **Ollama** running locally (`ollama run llama3.2`) — only needed if using the Ollama planner
 
 ---
+
 
 ## Next
 
