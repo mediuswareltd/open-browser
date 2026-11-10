@@ -1,5 +1,7 @@
 # OpenBrowser
 
+[![Docs](https://img.shields.io/badge/docs-GitHub%20Pages-0f766e)](https://mediuswareltd.github.io/open-browser/)
+
 <p align="center">
   <img src="arts/open-browser.png" alt="OpenBrowser" width="320" />
 </p>
@@ -191,3 +193,15 @@ Defined in `shared/schemas.ts`:
 ## License
 
 MIT
+
+## Documentation
+
+Full docs site (VitePress): **https://mediuswareltd.github.io/open-browser/**
+
+Local preview:
+
+```bash
+cd docs
+npm install
+npm run docs:dev
+```
