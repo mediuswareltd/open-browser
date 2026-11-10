@@ -5,6 +5,9 @@ hero:
   name: "OpenBrowser"
   text: "AI-powered browser automation"
   tagline: "Describe a goal in plain language; OpenBrowser plans and executes steps in a real Chromium browser with optional AI planners."
+  image:
+    src: /hero.png
+    alt: "OpenBrowser AI browser automation"
   actions:
   - theme: brand
     text: Get started
